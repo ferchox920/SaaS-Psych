@@ -1,0 +1,1010 @@
+openapi: 3.0.3
+info:
+  title: SessionFlow API
+  version: "1.0.0"
+  description: |
+    API multi-tenant de SessionFlow.
+    Esta especificacion refleja los endpoints actuales implementados en `apps/api/internal/http/server.go`.
+    En appointments, `cancel` reemplaza `delete` para preservar historial clinico.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Auth
+  - name: Clients
+  - name: Appointments
+  - name: Session Notes
+  - name: Audit
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Healthcheck
+      responses:
+        "200":
+          description: API operativa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: ok
+
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Exposicion de metricas en formato Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login por email/password
+      security:
+        - tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: owner@tenant-a.local
+              password: ChangeMe123!
+      responses:
+        "200":
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotacion de refresh token
+      security:
+        - tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refresh_token: "opaque-refresh-token"
+      responses:
+        "200":
+          description: Token rotado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoca refresh token
+      security:
+        - tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+            example:
+              refresh_token: "opaque-refresh-token"
+      responses:
+        "204":
+          description: Logout exitoso
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Usuario autenticado actual
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Identidad y rol del usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/v1/auth/admin-check:
+    get:
+      tags: [Auth]
+      summary: Verifica acceso owner/admin
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Usuario autorizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/clients:
+    post:
+      tags: [Clients]
+      summary: Crear cliente
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertClientRequest"
+            example:
+              fullname: Jane Doe
+              contact: jane@example.com
+              notes_public: Primera consulta
+      responses:
+        "201":
+          description: Cliente creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+    get:
+      tags: [Clients]
+      summary: Listar clientes del tenant
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Lista de clientes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/v1/clients/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathClientID"
+    get:
+      tags: [Clients]
+      summary: Obtener cliente por id
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Cliente encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    put:
+      tags: [Clients]
+      summary: Actualizar cliente
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertClientRequest"
+            example:
+              fullname: Jane Doe Updated
+              contact: jane.updated@example.com
+              notes_public: Seguimiento
+      responses:
+        "200":
+          description: Cliente actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    delete:
+      tags: [Clients]
+      summary: Eliminar cliente
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "204":
+          description: Cliente eliminado
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/appointments:
+    post:
+      tags: [Appointments]
+      summary: Crear cita
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAppointmentRequest"
+            example:
+              client_id: "c9ab5e4e-df2a-44bf-9db1-6e22a31f22a3"
+              starts_at: "2026-03-05T15:00:00Z"
+              ends_at: "2026-03-05T16:00:00Z"
+              location: "consultorio 1"
+      responses:
+        "201":
+          description: Cita creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+    get:
+      tags: [Appointments]
+      summary: Listar citas por rango
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - $ref: "#/components/parameters/QueryFrom"
+        - $ref: "#/components/parameters/QueryTo"
+      responses:
+        "200":
+          description: Lista de citas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppointmentListResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/appointments/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathAppointmentID"
+    put:
+      tags: [Appointments]
+      summary: Actualizar cita
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAppointmentRequest"
+            example:
+              starts_at: "2026-03-05T15:30:00Z"
+              ends_at: "2026-03-05T16:30:00Z"
+              location: "consultorio 2"
+      responses:
+        "200":
+          description: Cita actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/appointments/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/PathAppointmentID"
+    post:
+      tags: [Appointments]
+      summary: Cancelar cita
+      description: |
+        Formaliza el lifecycle state de appointments.
+        No existe delete fisico; la cita transiciona de `scheduled` a `canceled`.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Cita cancelada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/appointments/{appointment_id}/notes:
+    parameters:
+      - $ref: "#/components/parameters/PathAppointmentIDAlt"
+    post:
+      tags: [Session Notes]
+      summary: Crear nota de sesion
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSessionNoteRequest"
+            example:
+              body: Paciente estable, continuar tratamiento
+              is_private: true
+      responses:
+        "201":
+          description: Nota creada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNote"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    get:
+      tags: [Session Notes]
+      summary: Listar notas por cita
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Lista de notas visibles para el usuario
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNoteListResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/notes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/PathNoteID"
+    get:
+      tags: [Session Notes]
+      summary: Obtener nota por id
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Nota encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNote"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+    put:
+      tags: [Session Notes]
+      summary: Actualizar nota por id
+      description: |
+        Solo puede editar el autor o un usuario con rol `owner/admin`.
+        `appointment_id` y `author_user_id` son inmutables y no se aceptan en payload.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSessionNoteRequest"
+            example:
+              body: Nota actualizada
+              is_private: false
+      responses:
+        "200":
+          description: Nota actualizada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNote"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      summary: Listar audit logs del tenant
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - $ref: "#/components/parameters/AuditActor"
+        - $ref: "#/components/parameters/AuditAction"
+        - $ref: "#/components/parameters/AuditActionPrefix"
+        - $ref: "#/components/parameters/AuditEntity"
+        - $ref: "#/components/parameters/AuditFrom"
+        - $ref: "#/components/parameters/AuditTo"
+        - $ref: "#/components/parameters/AuditCursor"
+        - $ref: "#/components/parameters/AuditCursorID"
+        - $ref: "#/components/parameters/AuditOrder"
+        - $ref: "#/components/parameters/AuditLimit"
+        - $ref: "#/components/parameters/AuditOffset"
+      responses:
+        "200":
+          description: Lista paginada de auditoria
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditListResponse"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    tenantHeader:
+      type: apiKey
+      in: header
+      name: X-Tenant-ID
+
+  parameters:
+    PathClientID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PathAppointmentID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PathAppointmentIDAlt:
+      name: appointment_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PathNoteID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    QueryFrom:
+      name: from
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date-time
+    QueryTo:
+      name: to
+      in: query
+      required: true
+      schema:
+        type: string
+        format: date-time
+    AuditActor:
+      name: actor
+      in: query
+      schema:
+        type: string
+        format: uuid
+    AuditAction:
+      name: action
+      in: query
+      schema:
+        type: string
+    AuditActionPrefix:
+      name: action_prefix
+      in: query
+      schema:
+        type: string
+    AuditEntity:
+      name: entity
+      in: query
+      schema:
+        type: string
+    AuditFrom:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date-time
+    AuditTo:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date-time
+    AuditCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        format: date-time
+    AuditCursorID:
+      name: cursor_id
+      in: query
+      schema:
+        type: string
+        format: uuid
+    AuditOrder:
+      name: order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+    AuditLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    AuditOffset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+
+  responses:
+    ValidationError:
+      description: Error de validacion
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: validation_error
+              message: invalid request body
+              details:
+                field: body
+    UnauthorizedError:
+      description: No autorizado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: unauthorized
+              message: invalid credentials or token
+              details:
+                field: Authorization
+                reason: invalid_or_expired_token
+    ForbiddenError:
+      description: Prohibido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: forbidden
+              message: forbidden
+    NotFoundError:
+      description: No encontrado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: not_found
+              message: not found
+    ConflictError:
+      description: Conflicto
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: conflict
+              message: appointment overlaps existing slot
+    ServiceUnavailableError:
+      description: Servicio no disponible
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: service_unavailable
+              message: service unavailable
+    TooManyRequestsError:
+      description: Demasiadas solicitudes
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: too_many_requests
+              message: too many login attempts, try again later
+              details:
+                field: ip
+                reason: limit_exceeded
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+              nullable: true
+          required: [code, message]
+      required: [error]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+      required: [refresh_token]
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          format: int64
+      required: [access_token, refresh_token, token_type, expires_in]
+
+    MeResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+      required: [user_id, tenant_id, role]
+
+    UpsertClientRequest:
+      type: object
+      properties:
+        fullname:
+          type: string
+        contact:
+          type: string
+        notes_public:
+          type: string
+      required: [fullname]
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        fullname:
+          type: string
+        contact:
+          type: string
+        notes_public:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, tenant_id, fullname, contact, notes_public, created_at, updated_at]
+
+    ClientListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Client"
+      required: [items]
+
+    CreateAppointmentRequest:
+      type: object
+      properties:
+        client_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        location:
+          type: string
+      required: [client_id, starts_at, ends_at]
+
+    UpdateAppointmentRequest:
+      type: object
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        location:
+          type: string
+      required: [starts_at, ends_at]
+
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          description: Estado de lifecycle de la cita.
+          enum: [scheduled, canceled]
+        location:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, tenant_id, client_id, starts_at, ends_at, status, location, created_at, updated_at]
+
+    AppointmentListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Appointment"
+      required: [items]
+
+    CreateSessionNoteRequest:
+      type: object
+      properties:
+        body:
+          type: string
+        is_private:
+          type: boolean
+      required: [body]
+
+    UpdateSessionNoteRequest:
+      type: object
+      properties:
+        body:
+          type: string
+        is_private:
+          type: boolean
+      required: [body]
+
+    SessionNote:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        appointment_id:
+          type: string
+          format: uuid
+        author_user_id:
+          type: string
+          format: uuid
+        body:
+          type: string
+        is_private:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, tenant_id, appointment_id, author_user_id, body, is_private, created_at, updated_at]
+
+    SessionNoteListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionNote"
+      required: [items]
+
+    AuditItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        actor_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        entity:
+          type: string
+        entity_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required: [id, tenant_id, action, entity, metadata, created_at]
+
+    AuditPagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+        offset:
+          type: integer
+        count:
+          type: integer
+        total_count:
+          type: integer
+        next_cursor:
+          type: string
+          format: date-time
+          nullable: true
+        next_cursor_id:
+          type: string
+          format: uuid
+          nullable: true
+      required: [limit, offset, count, total_count]
+
+    AuditListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditItem"
+        pagination:
+          $ref: "#/components/schemas/AuditPagination"
+      required: [items, pagination]

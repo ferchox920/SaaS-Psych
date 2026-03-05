@@ -21,34 +21,46 @@ Progreso historico: [PROGRESS/PROGRESS_INDEX.md](./PROGRESS/PROGRESS_INDEX.md)
 
 - Go `1.24+`
 - Docker + Docker Compose
-- `migrate` CLI (golang-migrate)
 - `make`
+
+`migrate` CLI se instala/verifica con `make tools` (Linux/macOS).
 
 ## Setup rapido
 
-1. Levantar infraestructura:
+Flujo recomendado (bootstrap reproducible):
 
 ```bash
-docker compose up -d postgres redis
+make tools
+make db-up
+make migrate-up
+make test
 ```
 
-2. Configurar entorno (opcional con `.env`):
+Luego correr API:
+
+```bash
+cd apps/api
+go run ./cmd/server
+```
+
+Si queres setup paso a paso:
+
+1. Configurar entorno (opcional con `.env`):
 
 ```bash
 cp .env.example .env
 ```
 
+2. Levantar infraestructura:
+
+```bash
+make db-up
+```
+
 3. Ejecutar migraciones + seeds:
 
 ```bash
-make db-prepare DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
-```
-
-4. Correr API:
-
-```bash
-cd apps/api
-go run ./cmd/server
+make migrate-up DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
 ```
 
 ## Variables de entorno
@@ -87,7 +99,8 @@ Servicios locales:
 Comandos utiles:
 
 ```bash
-docker compose up -d postgres redis
+make db-up
+make db-down
 docker compose ps
 docker compose logs -f postgres
 docker compose logs -f redis
@@ -105,6 +118,8 @@ docker compose logs -f prometheus alertmanager grafana
 Comandos estandar (Makefile):
 
 ```bash
+make tools
+make db-up
 make migrate-up
 make migrate-down
 make migrate-down-1
@@ -116,6 +131,11 @@ Con DB explicita:
 ```bash
 make migrate-up DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
 ```
+
+Compatibilidad de `make tools`:
+
+- Linux/macOS: instala/verifica `migrate` automaticamente (`scripts/install_migrate.sh`).
+- Windows: usar instalacion manual (por ejemplo `choco install golang-migrate` o `scoop install migrate`) y luego ejecutar `make migrate-up`.
 
 Seed demo:
 

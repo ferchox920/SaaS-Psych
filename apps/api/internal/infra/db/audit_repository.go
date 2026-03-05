@@ -146,7 +146,6 @@ func (r *AuditRepository) ListAuditLogs(ctx context.Context, filter auditusecase
 		if filter.CursorID != nil {
 			clauses = append(clauses, fmt.Sprintf("id <> $%d", argPos))
 			args = append(args, *filter.CursorID)
-			argPos++
 		}
 	}
 
@@ -263,7 +262,6 @@ func (r *AuditRepository) CountAuditLogs(ctx context.Context, filter auditusecas
 		if filter.CursorID != nil {
 			clauses = append(clauses, fmt.Sprintf("id <> $%d", argPos))
 			args = append(args, *filter.CursorID)
-			argPos++
 		}
 	}
 

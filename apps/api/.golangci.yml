@@ -1,0 +1,33 @@
+run:
+  timeout: 3m
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - ineffassign
+    - errcheck
+    - staticcheck
+    - gocritic
+
+linters-settings:
+  staticcheck:
+    checks:
+      - all
+      - -ST1000
+      - -ST1003
+      - -ST1005
+      - -ST1020
+      - -ST1021
+      - -ST1022
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

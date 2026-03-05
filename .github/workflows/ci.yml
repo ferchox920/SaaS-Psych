@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    name: Test + Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Unit and package tests
+        run: go test ./...
+
+      - name: Build server
+        run: go build ./cmd/server
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.64.8
+          working-directory: apps/api
+          args: --config .golangci.yml --timeout=3m
+
+  integration-db:
+    name: Integration (Postgres + Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sessionflow
+          POSTGRES_PASSWORD: sessionflow
+          POSTGRES_DB: sessionflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sessionflow -d sessionflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable
+      REDIS_URL: redis://127.0.0.1:6379
+      RUN_PG_INTEGRATION: "1"
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Install migrate CLI
+        run: |
+          curl -sSL https://github.com/golang-migrate/migrate/releases/download/v4.18.3/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
+          tar -xzf /tmp/migrate.tar.gz -C /tmp
+          sudo mv /tmp/migrate /usr/local/bin/migrate
+          migrate -version
+
+      - name: Apply migrations
+        run: migrate -path migrations -database "$DATABASE_URL" up
+
+      - name: Run integration tests
+        run: go test ./internal/http ./internal/infra/db

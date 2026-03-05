@@ -54,6 +54,10 @@ func TestUserRolesRejectCrossTenantUserReferencePostgresIntegration(t *testing.T
 		t.Fatalf("insert users: %v", err)
 	}
 
+	if _, err := tx.Exec(ctx, `SAVEPOINT before_cross_tenant_user_role`); err != nil {
+		t.Fatalf("create savepoint: %v", err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO user_roles (id, tenant_id, user_id, role)
 		VALUES ($1, $2, $3, 'member')
@@ -61,6 +65,9 @@ func TestUserRolesRejectCrossTenantUserReferencePostgresIntegration(t *testing.T
 		t.Fatalf("expected FK violation for cross-tenant user_roles reference")
 	} else {
 		assertForeignKeyViolation(t, err)
+		if _, rbErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT before_cross_tenant_user_role`); rbErr != nil {
+			t.Fatalf("rollback to savepoint: %v", rbErr)
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `

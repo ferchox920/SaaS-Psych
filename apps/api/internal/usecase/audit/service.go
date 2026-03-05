@@ -116,7 +116,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) (ListResult, erro
 
 	var nextCursor *time.Time
 	var nextCursorID *uuid.UUID
-	if len(entries) == limit && len(entries) > 0 {
+	if len(entries) > 0 && totalCount > (offset+len(entries)) {
 		last := entries[len(entries)-1]
 		cursor := last.CreatedAt.UTC()
 		cursorID := last.ID

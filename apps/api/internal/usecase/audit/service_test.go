@@ -91,7 +91,7 @@ func TestList_NextCursorIncludesID(t *testing.T) {
 				CreatedAt: time.Now().UTC(),
 			},
 		},
-		total: 1,
+		total: 2,
 	}
 	service := NewService(repo)
 

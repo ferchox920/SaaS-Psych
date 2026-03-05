@@ -78,6 +78,10 @@ func TestSessionNotesRejectCrossTenantAppointmentReferencePostgresIntegration(t 
 		t.Fatalf("insert appointments: %v", err)
 	}
 
+	if _, err := tx.Exec(ctx, `SAVEPOINT before_cross_tenant_session_note`); err != nil {
+		t.Fatalf("create savepoint: %v", err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO session_notes (id, tenant_id, appointment_id, author_user_id, body, is_private)
 		VALUES ($1, $2, $3, $4, 'cross tenant', true)
@@ -85,6 +89,9 @@ func TestSessionNotesRejectCrossTenantAppointmentReferencePostgresIntegration(t 
 		t.Fatalf("expected FK violation for cross-tenant appointment reference in session_notes")
 	} else {
 		assertForeignKeyViolation(t, err)
+		if _, rbErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT before_cross_tenant_session_note`); rbErr != nil {
+			t.Fatalf("rollback to savepoint: %v", rbErr)
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `

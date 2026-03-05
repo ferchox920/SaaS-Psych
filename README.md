@@ -454,5 +454,3 @@ Este proyecto demuestra:
 - Historial de entregas: [PROGRESS/PROGRESS_INDEX.md](./PROGRESS/PROGRESS_INDEX.md)
 - Diseno de refresh token opaco: [docs/AUTH_REFRESH_TOKEN_DESIGN.md](./docs/AUTH_REFRESH_TOKEN_DESIGN.md)
 - Especificacion OpenAPI 3.0: [docs/openapi.yaml](./docs/openapi.yaml)
-#   S a a S - P s y c h  
- 

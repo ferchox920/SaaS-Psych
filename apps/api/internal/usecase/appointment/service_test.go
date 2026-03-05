@@ -90,7 +90,8 @@ func TestCreateReturnsConflictOnOverlap(t *testing.T) {
 
 func TestListByRangeValidatesInput(t *testing.T) {
 	svc := NewService(fakeRepo{}, nil)
-	_, err := svc.ListByRange(context.Background(), ListInput{TenantID: uuid.New(), From: time.Now(), To: time.Now()})
+	at := time.Now()
+	_, err := svc.ListByRange(context.Background(), ListInput{TenantID: uuid.New(), From: at, To: at})
 	if !errors.Is(err, domainerrors.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}

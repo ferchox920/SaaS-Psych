@@ -54,6 +54,10 @@ func TestAuditLogsRejectCrossTenantActorReferencePostgresIntegration(t *testing.
 		t.Fatalf("insert users: %v", err)
 	}
 
+	if _, err := tx.Exec(ctx, `SAVEPOINT before_cross_tenant_actor`); err != nil {
+		t.Fatalf("create savepoint: %v", err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO audit_logs (id, tenant_id, actor_user_id, action, entity, metadata)
 		VALUES ($1, $2, $3, 'auth.login', 'auth', '{}'::jsonb)
@@ -61,6 +65,9 @@ func TestAuditLogsRejectCrossTenantActorReferencePostgresIntegration(t *testing.
 		t.Fatalf("expected FK violation for cross-tenant actor_user_id in audit_logs")
 	} else {
 		assertForeignKeyViolation(t, err)
+		if _, rbErr := tx.Exec(ctx, `ROLLBACK TO SAVEPOINT before_cross_tenant_actor`); rbErr != nil {
+			t.Fatalf("rollback to savepoint: %v", rbErr)
+		}
 	}
 
 	if _, err := tx.Exec(ctx, `

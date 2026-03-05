@@ -11,7 +11,8 @@ import (
 )
 
 func TestNewEntityValidatesDateRange(t *testing.T) {
-	_, err := NewEntity(uuid.New(), uuid.New(), time.Now(), time.Now(), "", time.Time{})
+	at := time.Now()
+	_, err := NewEntity(uuid.New(), uuid.New(), at, at, "", time.Time{})
 	if !errors.Is(err, domainerrors.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
 	}

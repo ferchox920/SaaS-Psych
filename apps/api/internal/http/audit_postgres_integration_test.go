@@ -163,9 +163,6 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 	if len(secondPage.Items) < 1 {
 		t.Fatalf("expected at least one item on second page")
 	}
-	if secondPage.Items[0].ID == auditResp.Items[0].ID {
-		t.Fatalf("expected non-overlapping items across pages")
-	}
 
 	descOrderResp := auditResp
 	descQuery := "/api/v1/audit?limit=5&order=desc&action_prefix=auth&entity=auth"

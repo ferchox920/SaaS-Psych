@@ -142,6 +142,12 @@ func (r *AuditRepository) ListAuditLogs(ctx context.Context, filter auditusecase
 		}
 		clauses = append(clauses, fmt.Sprintf("(created_at, id) %s ($%d, $%d)", operator, argPos, argPos+1))
 		args = append(args, *filter.Cursor, cursorID)
+		argPos += 2
+		if filter.CursorID != nil {
+			clauses = append(clauses, fmt.Sprintf("id <> $%d", argPos))
+			args = append(args, *filter.CursorID)
+			argPos++
+		}
 	}
 
 	order := "DESC"
@@ -253,6 +259,12 @@ func (r *AuditRepository) CountAuditLogs(ctx context.Context, filter auditusecas
 		}
 		clauses = append(clauses, fmt.Sprintf("(created_at, id) %s ($%d, $%d)", operator, argPos, argPos+1))
 		args = append(args, *filter.Cursor, cursorID)
+		argPos += 2
+		if filter.CursorID != nil {
+			clauses = append(clauses, fmt.Sprintf("id <> $%d", argPos))
+			args = append(args, *filter.CursorID)
+			argPos++
+		}
 	}
 
 	query := fmt.Sprintf(`

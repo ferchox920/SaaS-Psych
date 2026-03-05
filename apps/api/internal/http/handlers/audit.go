@@ -83,7 +83,7 @@ func (h *AuditHandler) List(c echo.Context) error {
 	}
 
 	if from := strings.TrimSpace(c.QueryParam("from")); from != "" {
-		fromTime, err := time.Parse(time.RFC3339, from)
+		fromTime, err := time.Parse(time.RFC3339Nano, from)
 		if err != nil {
 			return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid from query param, expected RFC3339")
 		}
@@ -91,7 +91,7 @@ func (h *AuditHandler) List(c echo.Context) error {
 	}
 
 	if to := strings.TrimSpace(c.QueryParam("to")); to != "" {
-		toTime, err := time.Parse(time.RFC3339, to)
+		toTime, err := time.Parse(time.RFC3339Nano, to)
 		if err != nil {
 			return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid to query param, expected RFC3339")
 		}
@@ -99,7 +99,7 @@ func (h *AuditHandler) List(c echo.Context) error {
 	}
 
 	if cursor := strings.TrimSpace(c.QueryParam("cursor")); cursor != "" {
-		cursorTime, err := time.Parse(time.RFC3339, cursor)
+		cursorTime, err := time.Parse(time.RFC3339Nano, cursor)
 		if err != nil {
 			return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid cursor query param, expected RFC3339")
 		}
@@ -146,7 +146,7 @@ func (h *AuditHandler) List(c echo.Context) error {
 			Action:    item.Action,
 			Entity:    item.Entity,
 			Metadata:  item.Metadata,
-			CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339),
+			CreatedAt: item.CreatedAt.UTC().Format(time.RFC3339Nano),
 		}
 		if item.ActorUserID != nil {
 			actor := item.ActorUserID.String()
@@ -161,7 +161,7 @@ func (h *AuditHandler) List(c echo.Context) error {
 
 	var nextCursor *string
 	if result.NextCursor != nil {
-		cursor := result.NextCursor.UTC().Format(time.RFC3339)
+		cursor := result.NextCursor.UTC().Format(time.RFC3339Nano)
 		nextCursor = &cursor
 	}
 	var nextCursorID *string

@@ -1,0 +1,41 @@
+groups:
+  - name: sessionflow-api-alerts
+    rules:
+      - alert: SessionFlowApiDown
+        expr: up{job="sessionflow-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: sessionflow-api
+        annotations:
+          summary: "SessionFlow API target is down"
+          description: "Prometheus cannot scrape sessionflow-api for at least 1 minute."
+
+      - alert: SessionFlowHigh5xxErrorRate
+        expr: |
+          (
+            sum(rate(requests_total{job="sessionflow-api",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(requests_total{job="sessionflow-api"}[5m])), 0.001)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: sessionflow-api
+        annotations:
+          summary: "High 5xx error rate on SessionFlow API"
+          description: "5xx ratio is above 5% for 5 minutes."
+
+      - alert: SessionFlowHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(request_duration_seconds_bucket{job="sessionflow-api"}[5m])) by (le)
+          ) > 0.75
+        for: 10m
+        labels:
+          severity: warning
+          service: sessionflow-api
+        annotations:
+          summary: "High p95 latency on SessionFlow API"
+          description: "Global p95 request latency is above 750ms for 10 minutes."

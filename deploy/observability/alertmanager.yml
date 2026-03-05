@@ -1,0 +1,17 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: "dummy-webhook"
+  group_by: ["alertname", "service", "severity"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 1h
+
+receivers:
+  - name: "dummy-webhook"
+    webhook_configs:
+      # Placeholder receiver for local/dev validation.
+      # Replace with real endpoint (Slack, email bridge, webhook service) in real environments.
+      - url: "http://host.docker.internal:65535/alertmanager-webhook"
+        send_resolved: true

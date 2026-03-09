@@ -23,7 +23,13 @@ type Repository interface {
 type Service struct {
 	repo    Repository
 	auditor Auditor
+	metrics Metrics
 	now     func() time.Time
+}
+
+type Metrics interface {
+	RecordAppointmentCreated(err error)
+	RecordAppointmentCanceled(err error)
 }
 
 type Auditor interface {
@@ -66,32 +72,49 @@ func NewService(repo Repository, auditor Auditor) *Service {
 	return &Service{repo: repo, auditor: auditor, now: func() time.Time { return time.Now().UTC() }}
 }
 
+func (s *Service) WithMetrics(metrics Metrics) *Service {
+	s.metrics = metrics
+	return s
+}
+
 func (s *Service) Create(ctx context.Context, input CreateInput) (domainappointment.Entity, error) {
 	entity, err := domainappointment.NewEntity(input.TenantID, input.ClientID, input.StartsAt, input.EndsAt, input.Location, s.now())
 	if err != nil {
+		s.recordCreateMetric(err)
 		return domainappointment.Entity{}, err
 	}
 
 	clientExists, err := s.repo.ClientExists(ctx, input.TenantID, input.ClientID)
 	if err != nil {
-		return domainappointment.Entity{}, fmt.Errorf("check client exists: %w", err)
+		err = fmt.Errorf("check client exists: %w", err)
+		s.recordCreateMetric(err)
+		return domainappointment.Entity{}, err
 	}
 	if !clientExists {
-		return domainappointment.Entity{}, fmt.Errorf("client does not belong to tenant: %w", domainerrors.ErrForbidden)
+		err = fmt.Errorf("client does not belong to tenant: %w", domainerrors.ErrForbidden)
+		s.recordCreateMetric(err)
+		return domainappointment.Entity{}, err
 	}
 
 	hasOverlap, err := s.repo.ExistsOverlap(ctx, input.TenantID, entity.StartsAt, entity.EndsAt, nil)
 	if err != nil {
-		return domainappointment.Entity{}, fmt.Errorf("check overlap: %w", err)
+		err = fmt.Errorf("check overlap: %w", err)
+		s.recordCreateMetric(err)
+		return domainappointment.Entity{}, err
 	}
 	if hasOverlap {
-		return domainappointment.Entity{}, fmt.Errorf("appointment overlaps existing slot: %w", domainerrors.ErrConflict)
+		err = fmt.Errorf("appointment overlaps existing slot: %w", domainerrors.ErrConflict)
+		s.recordCreateMetric(err)
+		return domainappointment.Entity{}, err
 	}
 
 	out, err := s.repo.Create(ctx, entity)
 	if err != nil {
-		return domainappointment.Entity{}, fmt.Errorf("create appointment: %w", err)
+		err = fmt.Errorf("create appointment: %w", err)
+		s.recordCreateMetric(err)
+		return domainappointment.Entity{}, err
 	}
+	s.recordCreateMetric(nil)
 	s.recordAudit(ctx, input.TenantID, input.ActorUserID, "appointment.create", "appointment", out.ID, map[string]any{})
 	return out, nil
 }
@@ -157,24 +180,50 @@ func (s *Service) Cancel(ctx context.Context, tenantID, appointmentID, actorUser
 	// Design decision: appointments are never hard-deleted from the API.
 	// Clinical history is preserved by transitioning lifecycle state scheduled -> canceled.
 	if tenantID == uuid.Nil {
-		return domainappointment.Entity{}, domainerrors.NewValidation("tenant_id is required")
+		err := domainerrors.NewValidation("tenant_id is required")
+		s.recordCancelMetric(err)
+		return domainappointment.Entity{}, err
 	}
 	if appointmentID == uuid.Nil {
-		return domainappointment.Entity{}, domainerrors.NewValidation("appointment_id is required")
+		err := domainerrors.NewValidation("appointment_id is required")
+		s.recordCancelMetric(err)
+		return domainappointment.Entity{}, err
 	}
 
 	existing, err := s.repo.GetByID(ctx, tenantID, appointmentID)
 	if err != nil {
-		return domainappointment.Entity{}, fmt.Errorf("get appointment: %w", err)
+		err = fmt.Errorf("get appointment: %w", err)
+		s.recordCancelMetric(err)
+		return domainappointment.Entity{}, err
 	}
-	existing.Cancel(s.now())
+	if err := existing.Cancel(s.now()); err != nil {
+		s.recordCancelMetric(err)
+		return domainappointment.Entity{}, err
+	}
 
 	updated, err := s.repo.Update(ctx, existing)
 	if err != nil {
-		return domainappointment.Entity{}, fmt.Errorf("cancel appointment: %w", err)
+		err = fmt.Errorf("cancel appointment: %w", err)
+		s.recordCancelMetric(err)
+		return domainappointment.Entity{}, err
 	}
+	s.recordCancelMetric(nil)
 	s.recordAudit(ctx, tenantID, actorUserID, "appointment.cancel", "appointment", updated.ID, map[string]any{})
 	return updated, nil
+}
+
+func (s *Service) recordCreateMetric(err error) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.RecordAppointmentCreated(err)
+}
+
+func (s *Service) recordCancelMetric(err error) {
+	if s.metrics == nil {
+		return
+	}
+	s.metrics.RecordAppointmentCanceled(err)
 }
 
 func (s *Service) recordAudit(

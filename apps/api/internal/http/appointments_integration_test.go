@@ -226,3 +226,84 @@ func TestAppointmentsTenantIsolationAndRangeIntegration(t *testing.T) {
 		t.Fatalf("cross-tenant client expected 403, got %d body=%s", status, string(body))
 	}
 }
+
+func TestCanceledAppointmentsReleaseSlotAndCannotBeModifiedIntegration(t *testing.T) {
+	tenantID := uuid.New()
+	userID := uuid.New()
+	clientID := uuid.New()
+	secret := "appointments-cancel-integration-secret"
+
+	repo := newIntegrationAppointmentRepo()
+	repo.seedClient(tenantID, clientID)
+	service := appointmentusecase.NewService(repo, nil)
+	handler := handlers.NewAppointmentHandler(service)
+
+	server := NewServer(ServerDeps{
+		TenantMiddleware:   httpmiddleware.RequireTenant(integrationTenantChecker{tenants: map[uuid.UUID]struct{}{tenantID: {}}}),
+		AuthMiddleware:     httpmiddleware.RequireAuth(secret),
+		AppointmentHandler: handler,
+	})
+
+	tokenService := authusecase.NewTokenService(secret, 15*time.Minute)
+	token, _, err := tokenService.IssueAccessToken(userID, tenantID, "member")
+	if err != nil {
+		t.Fatalf("issue token: %v", err)
+	}
+
+	base := time.Date(2026, 3, 6, 10, 0, 0, 0, time.UTC)
+	status, body := doJSONRequest(t, server, "POST", "/api/v1/appointments", tenantID, token, map[string]string{
+		"client_id": clientID.String(),
+		"starts_at": base.Format(time.RFC3339),
+		"ends_at":   base.Add(time.Hour).Format(time.RFC3339),
+		"location":  "Room A",
+	})
+	if status != 201 {
+		t.Fatalf("create appointment expected 201, got %d body=%s", status, string(body))
+	}
+
+	created := struct {
+		ID string `json:"id"`
+	}{}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatalf("decode created appointment: %v", err)
+	}
+
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, nil)
+	if status != 200 {
+		t.Fatalf("cancel appointment expected 200, got %d body=%s", status, string(body))
+	}
+
+	canceled := struct {
+		Status string `json:"status"`
+	}{}
+	if err := json.Unmarshal(body, &canceled); err != nil {
+		t.Fatalf("decode canceled appointment: %v", err)
+	}
+	if canceled.Status != domainappointment.StatusCanceled {
+		t.Fatalf("expected canceled status, got %q", canceled.Status)
+	}
+
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments", tenantID, token, map[string]string{
+		"client_id": clientID.String(),
+		"starts_at": base.Format(time.RFC3339),
+		"ends_at":   base.Add(time.Hour).Format(time.RFC3339),
+		"location":  "Room B",
+	})
+	if status != 201 {
+		t.Fatalf("rebook canceled slot expected 201, got %d body=%s", status, string(body))
+	}
+
+	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]string{
+		"starts_at": base.Add(2 * time.Hour).Format(time.RFC3339),
+		"ends_at":   base.Add(3 * time.Hour).Format(time.RFC3339),
+		"location":  "Room C",
+	})
+	if status != 400 {
+		t.Fatalf("update canceled appointment expected 400, got %d body=%s", status, string(body))
+	}
+
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, nil)
+	if status != 400 {
+		t.Fatalf("second cancel expected 400, got %d body=%s", status, string(body))
+	}
+}

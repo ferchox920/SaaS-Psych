@@ -49,6 +49,14 @@ Checks adicionales:
 # http://localhost:9093
 ```
 
+Preflight recomendado antes de tests de integracion locales:
+
+```bash
+make integration-preflight
+```
+
+Este comando detecta temprano drift del entorno local: valida health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
+
 ## 2) Logs correlacionados (request_id / trace_id)
 
 Objetivo: ubicar request fallido y correlacionarlo con trazas.
@@ -96,6 +104,15 @@ sum(rate(requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(requests_total
 
 # p95 global
 histogram_quantile(0.95, sum(rate(request_duration_seconds_bucket[5m])) by (le))
+
+# Citas creadas exitosamente
+sum(rate(appointments_created_total{result="success"}[5m]))
+
+# Citas canceladas con error por causa
+sum by (reason) (rate(appointments_canceled_total{result="error"}[5m]))
+
+# Errores auth por endpoint y causa
+sum by (endpoint, reason) (rate(auth_errors_total[5m]))
 ```
 
 Alertas versionadas (ver `deploy/observability/prometheus-rules.yml`):
@@ -149,6 +166,17 @@ Si estaba caido:
 ```bash
 docker compose up -d postgres
 ```
+
+Si el contenedor arranca pero falla autenticacion con `sessionflow/sessionflow`, asumir primero drift del volumen local antes que un bug de aplicacion:
+
+```bash
+make db-reset-local
+make migrate-up
+```
+
+Impacto:
+- `make db-reset-local` borra el volumen local `sessionflow_postgres_data`.
+- Debe usarse solo en entorno local cuando se acepta perder el estado persistido de Postgres.
 
 Verificar schema/migraciones:
 
@@ -247,5 +275,6 @@ docker compose logs -f postgres redis prometheus alertmanager grafana otel-colle
 make test
 
 # Test con DB integrada (opcional)
+make integration-preflight
 make test-integration-db
 ```

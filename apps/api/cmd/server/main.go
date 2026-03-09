@@ -42,6 +42,10 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
 	serverDeps := http.ServerDeps{
 		RequestLoggingMiddleware: httpmiddleware.RequestLogging(logger),
 	}
@@ -57,6 +61,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	registry := prometheus.NewRegistry()
 	httpMetrics, err := observability.NewHTTPMetrics(registry)
+	if err != nil {
+		return err
+	}
+	domainMetrics, err := observability.NewDomainMetrics(registry)
 	if err != nil {
 		return err
 	}
@@ -84,10 +92,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		sessionNoteRepo := db.NewSessionNoteRepository(pool)
 		auditService := auditusecase.NewService(auditRepo)
 		clientService := clientusecase.NewService(clientRepo, auditRepo)
-		appointmentService := appointmentusecase.NewService(appointmentRepo, auditRepo)
+		appointmentService := appointmentusecase.NewService(appointmentRepo, auditRepo).WithMetrics(domainMetrics)
 		sessionNoteService := sessionnoteusecase.NewService(sessionNoteRepo, auditRepo)
 		tokenService := authusecase.NewTokenService(cfg.JWTAccessSecret, cfg.AccessTTL())
-		authService := authusecase.NewService(authRepo, tokenService, cfg.RefreshTTL(), auditRepo)
+		authService := authusecase.NewService(authRepo, tokenService, cfg.RefreshTTL(), auditRepo).WithMetrics(domainMetrics)
 		serverDeps.AuthHandler = httphandlers.NewAuthHandler(authService)
 		serverDeps.AuditHandler = httphandlers.NewAuditHandler(auditService)
 		serverDeps.ClientHandler = httphandlers.NewClientHandler(clientService)

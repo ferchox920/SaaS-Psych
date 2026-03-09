@@ -29,3 +29,25 @@ func TestOverlaps(t *testing.T) {
 		t.Fatalf("expected no overlap on touching ranges")
 	}
 }
+
+func TestCancelReturnsValidationWhenAlreadyCanceled(t *testing.T) {
+	entity, err := NewEntity(
+		uuid.New(),
+		uuid.New(),
+		time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 4, 11, 0, 0, 0, time.UTC),
+		"",
+		time.Time{},
+	)
+	if err != nil {
+		t.Fatalf("new entity: %v", err)
+	}
+
+	if err := entity.Cancel(time.Date(2026, 3, 4, 9, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("first cancel: %v", err)
+	}
+	err = entity.Cancel(time.Date(2026, 3, 4, 9, 30, 0, 0, time.UTC))
+	if !errors.Is(err, domainerrors.ErrValidation) {
+		t.Fatalf("expected validation on second cancel, got %v", err)
+	}
+}

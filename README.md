@@ -36,12 +36,39 @@ make migrate-up
 make test
 ```
 
+Si `make db-up` o `make migrate-up` falla porque ya existia un volumen local de Postgres con credenciales/datos de otra corrida, resetea solo la DB local y vuelve a bootstrapear:
+
+```bash
+make db-reset-local
+make migrate-up
+```
+
 Luego correr API:
 
 ```bash
 cd apps/api
 go run ./cmd/server
 ```
+
+## Troubleshooting local
+
+El bootstrap es reproducible sobre un host limpio, pero `docker compose` persiste el estado local en volúmenes. Si ya existía un volumen de Postgres de una corrida anterior, puede haber drift entre las credenciales/datos esperados por el repo y las que quedaron persistidas en tu máquina.
+
+Síntomas típicos:
+
+- `make db-up` levanta `postgres`, pero `make migrate-up` falla con autenticación.
+- `make integration-preflight` detecta credenciales incompatibles para `sessionflow/sessionflow`.
+- El contenedor usa un volumen legacy de una versión anterior del stack.
+
+Recuperación recomendada para entorno local:
+
+```bash
+make db-reset-local
+make migrate-up
+make integration-preflight
+```
+
+`make db-reset-local` borra el volumen local de Postgres y reconstruye `postgres` + `redis`. Es un comando destructivo y solo aplica a desarrollo local.
 
 Si queres setup paso a paso:
 
@@ -81,6 +108,15 @@ Base (`.env.example`):
 - `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=local`
 - `OTEL_DB_STATEMENT_ENABLED=false`
 
+Hardening baseline:
+
+- `JWT_ACCESS_SECRET=change-me` es solo para `APP_ENV=local`.
+- El servidor falla en startup si `APP_ENV` no es `local` y `JWT_ACCESS_SECRET` sigue en `change-me`.
+- Usar un secreto unico y largo por entorno, inyectado desde el runtime o secret manager, no commiteado en el repo.
+- Mantener `APP_ENV` alineado con el entorno real (`local`, `dev`, `staging`, `production`) para que las validaciones de arranque apliquen correctamente.
+
+Guia de referencia: [docs/ENV_HARDENING_BASELINE.md](./docs/ENV_HARDENING_BASELINE.md)
+
 Variables usadas en integration tests/CI:
 
 - `RUN_PG_INTEGRATION=1` habilita tests Postgres opt-in.
@@ -101,10 +137,14 @@ Comandos utiles:
 ```bash
 make db-up
 make db-down
+make db-reset-local
+make integration-preflight
 docker compose ps
 docker compose logs -f postgres
 docker compose logs -f redis
 ```
+
+`make db-reset-local` elimina el volumen local `sessionflow_postgres_data` y vuelve a levantar `postgres` + `redis`. Es un reset destructivo de la DB local y se debe usar solo cuando el volumen persistente quedo incompatible o queres reconstruir el entorno desde cero.
 
 Stack observabilidad local (metrics + dashboards):
 
@@ -120,11 +160,19 @@ Comandos estandar (Makefile):
 ```bash
 make tools
 make db-up
+make db-reset-local
+make integration-preflight
 make migrate-up
 make migrate-down
 make migrate-down-1
 make migrate-status
 ```
+
+Caso operativo conocido:
+
+- Si Postgres arranca pero rechaza autenticacion para `sessionflow/sessionflow`, el volumen persistente local suele venir de una corrida anterior con otras credenciales.
+- El flujo recomendado en ese caso es `make db-reset-local` y luego `make migrate-up`.
+- Si tenias un volumen legacy de Compose creado antes del nombre estable `sessionflow`, puede quedar huerfano en Docker; ya no lo usa el stack actual, pero podes removerlo manualmente si queres limpiar el host.
 
 Con DB explicita:
 
@@ -233,7 +281,17 @@ make test
 Integration DB (Postgres real, opt-in):
 
 ```bash
+make integration-preflight
 make test-integration-db DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+```
+
+`make integration-preflight` valida antes del test que el contenedor `postgres` responde con las credenciales esperadas (`sessionflow/sessionflow`) y que `redis` responde `PONG`. Si falla por drift del volumen local, el flujo de recuperacion recomendado es:
+
+```bash
+make db-reset-local
+make migrate-up
+make integration-preflight
+make test-integration-db
 ```
 
 Equivalente manual:
@@ -452,5 +510,7 @@ Este proyecto demuestra:
 
 - Roadmap y estado por sprints: [SPRINTS.md](./SPRINTS.md)
 - Historial de entregas: [PROGRESS/PROGRESS_INDEX.md](./PROGRESS/PROGRESS_INDEX.md)
+- ADR arquitectura API: [docs/adr/0001-api-architecture.md](./docs/adr/0001-api-architecture.md)
+- Checklist de revision PR: [docs/PR_REVIEW_CHECKLIST.md](./docs/PR_REVIEW_CHECKLIST.md)
 - Diseno de refresh token opaco: [docs/AUTH_REFRESH_TOKEN_DESIGN.md](./docs/AUTH_REFRESH_TOKEN_DESIGN.md)
 - Especificacion OpenAPI 3.0: [docs/openapi.yaml](./docs/openapi.yaml)

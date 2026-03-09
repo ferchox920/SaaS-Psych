@@ -63,6 +63,7 @@ golangci-lint run --config .golangci.yml --timeout=3m
 ### B. Integracion Postgres/Redis
 
 - [ ] Servicios arriba: Postgres + Redis.
+- [ ] Preflight local valida credenciales/estado de Postgres y respuesta de Redis.
 - [ ] Migraciones aplicadas.
 - [ ] Tests con `RUN_PG_INTEGRATION=1` pasan.
 
@@ -70,8 +71,17 @@ Comandos:
 
 ```bash
 docker compose up -d postgres redis
+make integration-preflight
 make db-prepare
 make test-integration-db
+```
+
+Si `make integration-preflight` falla por drift del volumen local de Postgres (credenciales/estado incompatibles), recuperar el entorno antes de seguir:
+
+```bash
+make db-reset-local
+make migrate-up
+make integration-preflight
 ```
 
 ### C. Contrato API (OpenAPI + Swagger)

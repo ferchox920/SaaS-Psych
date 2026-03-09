@@ -72,12 +72,16 @@ func (e *Entity) Update(startsAt, endsAt time.Time, location string, now time.Ti
 	return nil
 }
 
-func (e *Entity) Cancel(now time.Time) {
+func (e *Entity) Cancel(now time.Time) error {
+	if e.Status == StatusCanceled {
+		return domainerrors.NewValidation("appointment is already canceled")
+	}
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
 	e.Status = StatusCanceled
 	e.UpdatedAt = now
+	return nil
 }
 
 func Overlaps(aStart, aEnd, bStart, bEnd time.Time) bool {

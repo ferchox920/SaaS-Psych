@@ -1,10 +1,14 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
+
+const defaultJWTAccessSecret = "change-me"
 
 type Config struct {
 	AppEnv               string
@@ -28,7 +32,7 @@ func Load() Config {
 		HTTPPort:             getEnv("HTTP_PORT", "8080"),
 		DatabaseURL:          getEnv("DATABASE_URL", ""),
 		RedisURL:             getEnv("REDIS_URL", ""),
-		JWTAccessSecret:      getEnv("JWT_ACCESS_SECRET", "change-me"),
+		JWTAccessSecret:      getEnv("JWT_ACCESS_SECRET", defaultJWTAccessSecret),
 		AccessTTLMin:         getEnvAsInt("ACCESS_TTL_MIN", 15),
 		RefreshTTLDays:       getEnvAsInt("REFRESH_TTL_DAYS", 30),
 		RateLimitLoginPerMin: getEnvAsInt("RATE_LIMIT_LOGIN_PER_MIN", 10),
@@ -38,6 +42,19 @@ func Load() Config {
 		OTELResourceAttrs:    getEnv("OTEL_RESOURCE_ATTRIBUTES", ""),
 		OTELDBStatement:      getEnvAsBool("OTEL_DB_STATEMENT_ENABLED", false),
 	}
+}
+
+func (c Config) Validate() error {
+	secret := strings.TrimSpace(c.JWTAccessSecret)
+	if secret == "" {
+		return fmt.Errorf("JWT_ACCESS_SECRET cannot be empty")
+	}
+
+	if normalizeEnv(c.AppEnv) != "local" && secret == defaultJWTAccessSecret {
+		return fmt.Errorf("JWT_ACCESS_SECRET cannot use the default value outside local environment")
+	}
+
+	return nil
 }
 
 func getEnv(key, fallback string) string {
@@ -83,4 +100,8 @@ func (c Config) AccessTTL() time.Duration {
 
 func (c Config) RefreshTTL() time.Duration {
 	return time.Duration(c.RefreshTTLDays) * 24 * time.Hour
+}
+
+func normalizeEnv(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }

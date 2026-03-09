@@ -25,6 +25,11 @@ type fakeAuditor struct {
 	actions []string
 }
 
+type fakeMetrics struct {
+	createErrors []error
+	cancelErrors []error
+}
+
 func (f *fakeAuditor) RecordDomainEvent(
 	_ context.Context,
 	_ uuid.UUID,
@@ -36,6 +41,14 @@ func (f *fakeAuditor) RecordDomainEvent(
 ) error {
 	f.actions = append(f.actions, action)
 	return nil
+}
+
+func (f *fakeMetrics) RecordAppointmentCreated(err error) {
+	f.createErrors = append(f.createErrors, err)
+}
+
+func (f *fakeMetrics) RecordAppointmentCanceled(err error) {
+	f.cancelErrors = append(f.cancelErrors, err)
 }
 
 func (f fakeRepo) Create(ctx context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
@@ -173,5 +186,109 @@ func TestAppointmentActionsRecordDomainAudit(t *testing.T) {
 		if auditor.actions[i] != action {
 			t.Fatalf("expected action[%d]=%q, got %q", i, action, auditor.actions[i])
 		}
+	}
+}
+
+func TestUpdateReturnsValidationForCanceledAppointment(t *testing.T) {
+	tenantID := uuid.New()
+	appointmentID := uuid.New()
+	base := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+
+	svc := NewService(fakeRepo{
+		getByIDFn: func(_ context.Context, _, _ uuid.UUID) (domainappointment.Entity, error) {
+			return domainappointment.Entity{
+				ID:       appointmentID,
+				TenantID: tenantID,
+				ClientID: uuid.New(),
+				StartsAt: base,
+				EndsAt:   base.Add(time.Hour),
+				Status:   domainappointment.StatusCanceled,
+			}, nil
+		},
+	}, nil)
+
+	_, err := svc.Update(context.Background(), UpdateInput{
+		TenantID:      tenantID,
+		AppointmentID: appointmentID,
+		ActorUserID:   uuid.New(),
+		StartsAt:      base.Add(2 * time.Hour),
+		EndsAt:        base.Add(3 * time.Hour),
+	})
+	if !errors.Is(err, domainerrors.ErrValidation) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestCancelReturnsValidationWhenAlreadyCanceled(t *testing.T) {
+	tenantID := uuid.New()
+	appointmentID := uuid.New()
+	base := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+
+	svc := NewService(fakeRepo{
+		getByIDFn: func(_ context.Context, _, _ uuid.UUID) (domainappointment.Entity, error) {
+			return domainappointment.Entity{
+				ID:        appointmentID,
+				TenantID:  tenantID,
+				ClientID:  uuid.New(),
+				StartsAt:  base,
+				EndsAt:    base.Add(time.Hour),
+				Status:    domainappointment.StatusCanceled,
+				UpdatedAt: base,
+			}, nil
+		},
+	}, nil)
+
+	_, err := svc.Cancel(context.Background(), tenantID, appointmentID, uuid.New())
+	if !errors.Is(err, domainerrors.ErrValidation) {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestAppointmentMetricsRecordCreateAndCancelOutcomes(t *testing.T) {
+	tenantID := uuid.New()
+	clientID := uuid.New()
+	appointmentID := uuid.New()
+	base := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	metrics := &fakeMetrics{}
+
+	repo := fakeRepo{
+		clientExistsFn: func(context.Context, uuid.UUID, uuid.UUID) (bool, error) { return true, nil },
+		createFn: func(_ context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+			in.ID = appointmentID
+			return in, nil
+		},
+		getByIDFn: func(_ context.Context, _, _ uuid.UUID) (domainappointment.Entity, error) {
+			return domainappointment.Entity{
+				ID:       appointmentID,
+				TenantID: tenantID,
+				ClientID: clientID,
+				StartsAt: base,
+				EndsAt:   base.Add(time.Hour),
+				Status:   domainappointment.StatusScheduled,
+			}, nil
+		},
+		updateFn: func(_ context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+			return in, nil
+		},
+	}
+
+	svc := NewService(repo, nil).WithMetrics(metrics)
+	if _, err := svc.Create(context.Background(), CreateInput{
+		TenantID: tenantID,
+		ClientID: clientID,
+		StartsAt: base,
+		EndsAt:   base.Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := svc.Cancel(context.Background(), tenantID, appointmentID, uuid.New()); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+
+	if len(metrics.createErrors) != 1 || metrics.createErrors[0] != nil {
+		t.Fatalf("expected one successful create metric, got %#v", metrics.createErrors)
+	}
+	if len(metrics.cancelErrors) != 1 || metrics.cancelErrors[0] != nil {
+		t.Fatalf("expected one successful cancel metric, got %#v", metrics.cancelErrors)
 	}
 }

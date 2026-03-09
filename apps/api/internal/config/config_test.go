@@ -51,6 +51,39 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsDefaultSecretInLocal(t *testing.T) {
+	cfg := Config{
+		AppEnv:          "local",
+		JWTAccessSecret: defaultJWTAccessSecret,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected local config to allow default secret, got %v", err)
+	}
+}
+
+func TestValidateRejectsDefaultSecretOutsideLocal(t *testing.T) {
+	cfg := Config{
+		AppEnv:          "production",
+		JWTAccessSecret: defaultJWTAccessSecret,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected non-local config to reject default secret")
+	}
+}
+
+func TestValidateRejectsBlankSecret(t *testing.T) {
+	cfg := Config{
+		AppEnv:          "local",
+		JWTAccessSecret: "   ",
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected blank secret to be rejected")
+	}
+}
+
 func TestLoadFromEnvironment(t *testing.T) {
 	t.Setenv("APP_ENV", "dev")
 	t.Setenv("HTTP_PORT", "9000")

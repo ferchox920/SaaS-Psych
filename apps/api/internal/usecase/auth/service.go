@@ -62,6 +62,11 @@ type Service struct {
 	token      *TokenService
 	refreshTTL time.Duration
 	auditor    Auditor
+	metrics    Metrics
+}
+
+type Metrics interface {
+	RecordAuthError(endpoint string, err error)
 }
 
 func NewService(repo Repository, token *TokenService, refreshTTL time.Duration, auditor Auditor) *Service {
@@ -73,44 +78,67 @@ func NewService(repo Repository, token *TokenService, refreshTTL time.Duration, 
 	}
 }
 
+func (s *Service) WithMetrics(metrics Metrics) *Service {
+	s.metrics = metrics
+	return s
+}
+
 func (s *Service) Login(ctx context.Context, tenantID uuid.UUID, email, password string) (LoginOutput, error) {
 	if tenantID == uuid.Nil {
-		return LoginOutput{}, domainerrors.NewValidation("tenant_id is required")
+		err := domainerrors.NewValidation("tenant_id is required")
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 	if strings.TrimSpace(email) == "" || strings.TrimSpace(password) == "" {
-		return LoginOutput{}, domainerrors.NewValidation("email and password are required")
+		err := domainerrors.NewValidation("email and password are required")
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	user, err := s.repo.GetUserByEmail(ctx, tenantID, email)
 	if err != nil {
 		if errors.Is(err, domainerrors.ErrNotFound) {
-			return LoginOutput{}, domainerrors.ErrUnauthorized
+			err = domainerrors.ErrUnauthorized
+			s.recordAuthError("login", err)
+			return LoginOutput{}, err
 		}
 
-		return LoginOutput{}, fmt.Errorf("find user by email: %w", err)
+		err = fmt.Errorf("find user by email: %w", err)
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return LoginOutput{}, domainerrors.ErrUnauthorized
+		err = domainerrors.ErrUnauthorized
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	role, err := s.repo.GetUserRole(ctx, tenantID, user.ID)
 	if err != nil {
 		if errors.Is(err, domainerrors.ErrNotFound) {
-			return LoginOutput{}, domainerrors.ErrUnauthorized
+			err = domainerrors.ErrUnauthorized
+			s.recordAuthError("login", err)
+			return LoginOutput{}, err
 		}
 
-		return LoginOutput{}, fmt.Errorf("get user role: %w", err)
+		err = fmt.Errorf("get user role: %w", err)
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	accessToken, expiresIn, err := s.token.IssueAccessToken(user.ID, tenantID, role)
 	if err != nil {
-		return LoginOutput{}, fmt.Errorf("issue access token: %w", err)
+		err = fmt.Errorf("issue access token: %w", err)
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	refreshPlain, refreshHash, err := s.token.GenerateRefreshToken()
 	if err != nil {
-		return LoginOutput{}, fmt.Errorf("generate refresh token: %w", err)
+		err = fmt.Errorf("generate refresh token: %w", err)
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 
 	if err := s.repo.CreateRefreshToken(ctx, RefreshTokenWrite{
@@ -119,7 +147,9 @@ func (s *Service) Login(ctx context.Context, tenantID uuid.UUID, email, password
 		TokenHash: refreshHash,
 		ExpiresAt: time.Now().UTC().Add(s.refreshTTL),
 	}); err != nil {
-		return LoginOutput{}, fmt.Errorf("store refresh token: %w", err)
+		err = fmt.Errorf("store refresh token: %w", err)
+		s.recordAuthError("login", err)
+		return LoginOutput{}, err
 	}
 	s.recordAudit(ctx, AuthAuditEvent{
 		TenantID:    tenantID,
@@ -140,47 +170,67 @@ func (s *Service) Login(ctx context.Context, tenantID uuid.UUID, email, password
 
 func (s *Service) Refresh(ctx context.Context, tenantID uuid.UUID, refreshToken string) (LoginOutput, error) {
 	if tenantID == uuid.Nil {
-		return LoginOutput{}, domainerrors.NewValidation("tenant_id is required")
+		err := domainerrors.NewValidation("tenant_id is required")
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 	if strings.TrimSpace(refreshToken) == "" {
-		return LoginOutput{}, domainerrors.NewValidation("refresh_token is required")
+		err := domainerrors.NewValidation("refresh_token is required")
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
 	stored, err := s.repo.GetRefreshToken(ctx, tenantID, tokenHash)
 	if err != nil {
 		if errors.Is(err, domainerrors.ErrNotFound) {
-			return LoginOutput{}, domainerrors.ErrUnauthorized
+			err = domainerrors.ErrUnauthorized
+			s.recordAuthError("refresh", err)
+			return LoginOutput{}, err
 		}
 
-		return LoginOutput{}, fmt.Errorf("load refresh token: %w", err)
+		err = fmt.Errorf("load refresh token: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	if stored.RevokedAt != nil || time.Now().UTC().After(stored.ExpiresAt) {
-		return LoginOutput{}, domainerrors.ErrUnauthorized
+		err = domainerrors.ErrUnauthorized
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	role, err := s.repo.GetUserRole(ctx, tenantID, stored.UserID)
 	if err != nil {
 		if errors.Is(err, domainerrors.ErrNotFound) {
-			return LoginOutput{}, domainerrors.ErrUnauthorized
+			err = domainerrors.ErrUnauthorized
+			s.recordAuthError("refresh", err)
+			return LoginOutput{}, err
 		}
 
-		return LoginOutput{}, fmt.Errorf("get user role: %w", err)
+		err = fmt.Errorf("get user role: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	if err := s.repo.RevokeRefreshToken(ctx, tenantID, tokenHash); err != nil {
-		return LoginOutput{}, fmt.Errorf("revoke old refresh token: %w", err)
+		err = fmt.Errorf("revoke old refresh token: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	accessToken, expiresIn, err := s.token.IssueAccessToken(stored.UserID, tenantID, role)
 	if err != nil {
-		return LoginOutput{}, fmt.Errorf("issue access token: %w", err)
+		err = fmt.Errorf("issue access token: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	newPlain, newHash, err := s.token.GenerateRefreshToken()
 	if err != nil {
-		return LoginOutput{}, fmt.Errorf("generate refresh token: %w", err)
+		err = fmt.Errorf("generate refresh token: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 
 	if err := s.repo.CreateRefreshToken(ctx, RefreshTokenWrite{
@@ -189,7 +239,9 @@ func (s *Service) Refresh(ctx context.Context, tenantID uuid.UUID, refreshToken 
 		TokenHash: newHash,
 		ExpiresAt: time.Now().UTC().Add(s.refreshTTL),
 	}); err != nil {
-		return LoginOutput{}, fmt.Errorf("store rotated refresh token: %w", err)
+		err = fmt.Errorf("store rotated refresh token: %w", err)
+		s.recordAuthError("refresh", err)
+		return LoginOutput{}, err
 	}
 	s.recordAudit(ctx, AuthAuditEvent{
 		TenantID:    tenantID,
@@ -210,10 +262,14 @@ func (s *Service) Refresh(ctx context.Context, tenantID uuid.UUID, refreshToken 
 
 func (s *Service) Logout(ctx context.Context, tenantID uuid.UUID, refreshToken string) error {
 	if tenantID == uuid.Nil {
-		return domainerrors.NewValidation("tenant_id is required")
+		err := domainerrors.NewValidation("tenant_id is required")
+		s.recordAuthError("logout", err)
+		return err
 	}
 	if strings.TrimSpace(refreshToken) == "" {
-		return domainerrors.NewValidation("refresh_token is required")
+		err := domainerrors.NewValidation("refresh_token is required")
+		s.recordAuthError("logout", err)
+		return err
 	}
 
 	tokenHash := HashRefreshToken(refreshToken)
@@ -223,14 +279,18 @@ func (s *Service) Logout(ctx context.Context, tenantID uuid.UUID, refreshToken s
 			return nil
 		}
 
-		return fmt.Errorf("load refresh token for logout: %w", err)
+		err = fmt.Errorf("load refresh token for logout: %w", err)
+		s.recordAuthError("logout", err)
+		return err
 	}
 	if err := s.repo.RevokeRefreshToken(ctx, tenantID, tokenHash); err != nil {
 		if errors.Is(err, domainerrors.ErrNotFound) {
 			return nil
 		}
 
-		return fmt.Errorf("revoke refresh token: %w", err)
+		err = fmt.Errorf("revoke refresh token: %w", err)
+		s.recordAuthError("logout", err)
+		return err
 	}
 	s.recordAudit(ctx, AuthAuditEvent{
 		TenantID:    tenantID,
@@ -250,4 +310,11 @@ func (s *Service) recordAudit(ctx context.Context, event AuthAuditEvent) {
 	}
 
 	_ = s.auditor.RecordAuthEvent(ctx, event)
+}
+
+func (s *Service) recordAuthError(endpoint string, err error) {
+	if s.metrics == nil || err == nil {
+		return
+	}
+	s.metrics.RecordAuthError(endpoint, err)
 }

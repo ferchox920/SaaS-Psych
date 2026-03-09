@@ -103,6 +103,10 @@ grafana/
 - `infra`: Postgres/Redis, logging, metricas, implementaciones concretas.
 - `http`: handlers, request parsing, response mapping, middleware.
 
+Decision vigente:
+- La implementacion actual materializa esta arquitectura dentro de `apps/api/internal/...`.
+- Ver ADR: `docs/adr/0001-api-architecture.md`.
+
 ---
 
 ## 5) Modelo Multi-tenant
@@ -281,6 +285,11 @@ Ejemplo:
 - `REFRESH_TTL_DAYS=30`
 - `RATE_LIMIT_LOGIN_PER_MIN=10`
 
+Baseline de hardening:
+- `JWT_ACCESS_SECRET=change-me` solo se admite en `local`.
+- En cualquier entorno no local, el proceso debe fallar en startup si el secreto conserva el valor por defecto.
+- Los secretos deben inyectarse por entorno y no versionarse.
+
 ---
 
 ## 14) Plan por Sprints (guia para Codex)
@@ -324,6 +333,7 @@ Cuando se pidan cambios:
    - tests minimos
 3. Actualizar documentacion (si toca arquitectura/contratos).
 4. Mantener cada cambio pequeno y compilable.
+5. En cambios de persistencia o queries, completar la checklist tenant-aware del PR (`docs/PR_REVIEW_CHECKLIST.md`).
 
 Convencion de commits (sugerida):
 - `feat(auth): ...`

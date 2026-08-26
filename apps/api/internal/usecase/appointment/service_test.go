@@ -23,6 +23,7 @@ type fakeRepo struct {
 
 type fakeAuditor struct {
 	actions []string
+	err     error
 }
 
 type fakeMetrics struct {
@@ -40,7 +41,7 @@ func (f *fakeAuditor) RecordDomainEvent(
 	_ map[string]any,
 ) error {
 	f.actions = append(f.actions, action)
-	return nil
+	return f.err
 }
 
 func (f *fakeMetrics) RecordAppointmentCreated(err error) {
@@ -51,7 +52,7 @@ func (f *fakeMetrics) RecordAppointmentCanceled(err error) {
 	f.cancelErrors = append(f.cancelErrors, err)
 }
 
-func (f fakeRepo) Create(ctx context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (f fakeRepo) Create(ctx context.Context, in domainappointment.Entity, _ uuid.UUID) (domainappointment.Entity, error) {
 	if f.createFn == nil {
 		return in, nil
 	}
@@ -66,7 +67,7 @@ func (f fakeRepo) ListByRange(ctx context.Context, tenantID uuid.UUID, from, to 
 func (f fakeRepo) GetByID(ctx context.Context, tenantID, appointmentID uuid.UUID) (domainappointment.Entity, error) {
 	return f.getByIDFn(ctx, tenantID, appointmentID)
 }
-func (f fakeRepo) Update(ctx context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (f fakeRepo) Update(ctx context.Context, in domainappointment.Entity, _ uuid.UUID, _ string) (domainappointment.Entity, error) {
 	if f.updateFn == nil {
 		return in, nil
 	}
@@ -104,9 +105,21 @@ func TestCreateReturnsConflictOnOverlap(t *testing.T) {
 func TestListByRangeValidatesInput(t *testing.T) {
 	svc := NewService(fakeRepo{}, nil)
 	at := time.Now()
-	_, err := svc.ListByRange(context.Background(), ListInput{TenantID: uuid.New(), From: at, To: at})
+	_, err := svc.ListByRange(context.Background(), ListInput{TenantID: uuid.New(), ActorUserID: uuid.New(), From: at, To: at})
 	if !errors.Is(err, domainerrors.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestAppointmentListFailsClosedWhenAuditUnavailable(t *testing.T) {
+	auditFailure := errors.New("audit unavailable")
+	now := time.Now().UTC()
+	svc := NewService(fakeRepo{}, &fakeAuditor{err: auditFailure})
+	_, err := svc.ListByRange(context.Background(), ListInput{
+		TenantID: uuid.New(), ActorUserID: uuid.New(), From: now, To: now.Add(time.Hour),
+	})
+	if !errors.Is(err, auditFailure) {
+		t.Fatalf("expected appointment list to fail closed, got %v", err)
 	}
 }
 

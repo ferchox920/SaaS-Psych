@@ -10,14 +10,30 @@ import (
 )
 
 type Entity struct {
-	ID            uuid.UUID
-	TenantID      uuid.UUID
-	AppointmentID uuid.UUID
-	AuthorUserID  uuid.UUID
-	Body          string
-	IsPrivate     bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uuid.UUID
+	TenantID       uuid.UUID
+	AppointmentID  uuid.UUID
+	AuthorUserID   uuid.UUID
+	Body           string
+	IsPrivate      bool
+	Status         string
+	CurrentVersion int
+	SignedAt       *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type Version struct {
+	ID           uuid.UUID
+	TenantID     uuid.UUID
+	NoteID       uuid.UUID
+	Version      int
+	Body         string
+	IsPrivate    bool
+	ChangeKind   string
+	ChangeReason string
+	ActorUserID  uuid.UUID
+	CreatedAt    time.Time
 }
 
 func NewEntity(tenantID, appointmentID, authorUserID uuid.UUID, body string, isPrivate bool, now time.Time) (Entity, error) {
@@ -39,14 +55,16 @@ func NewEntity(tenantID, appointmentID, authorUserID uuid.UUID, body string, isP
 	}
 
 	return Entity{
-		ID:            uuid.New(),
-		TenantID:      tenantID,
-		AppointmentID: appointmentID,
-		AuthorUserID:  authorUserID,
-		Body:          body,
-		IsPrivate:     isPrivate,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:             uuid.New(),
+		TenantID:       tenantID,
+		AppointmentID:  appointmentID,
+		AuthorUserID:   authorUserID,
+		Body:           body,
+		IsPrivate:      isPrivate,
+		Status:         "draft",
+		CurrentVersion: 1,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}, nil
 }
 
@@ -54,15 +72,9 @@ func CanView(note Entity, requesterUserID uuid.UUID, requesterRole string) bool 
 	if !note.IsPrivate {
 		return true
 	}
-	if note.AuthorUserID == requesterUserID {
-		return true
-	}
-	return requesterRole == "owner" || requesterRole == "admin"
+	return note.AuthorUserID == requesterUserID
 }
 
 func CanEdit(note Entity, requesterUserID uuid.UUID, requesterRole string) bool {
-	if note.AuthorUserID == requesterUserID {
-		return true
-	}
-	return requesterRole == "owner" || requesterRole == "admin"
+	return note.AuthorUserID == requesterUserID
 }

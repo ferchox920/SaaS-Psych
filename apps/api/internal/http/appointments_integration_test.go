@@ -24,6 +24,18 @@ type integrationAppointmentRepo struct {
 	clients  map[uuid.UUID]map[uuid.UUID]struct{}
 }
 
+type integrationAppointmentAccess map[uuid.UUID]map[uuid.UUID]string
+
+func (a integrationAppointmentAccess) CanAccessClient(_ context.Context, _ uuid.UUID, userID, clientID uuid.UUID, relationships ...string) (bool, error) {
+	relationship := a[clientID][userID]
+	for _, allowed := range relationships {
+		if relationship == allowed {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func newIntegrationAppointmentRepo() *integrationAppointmentRepo {
 	return &integrationAppointmentRepo{
 		byTenant: make(map[uuid.UUID]map[uuid.UUID]domainappointment.Entity),
@@ -40,7 +52,7 @@ func (r *integrationAppointmentRepo) seedClient(tenantID, clientID uuid.UUID) {
 	r.clients[tenantID][clientID] = struct{}{}
 }
 
-func (r *integrationAppointmentRepo) Create(_ context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (r *integrationAppointmentRepo) Create(_ context.Context, in domainappointment.Entity, _ uuid.UUID) (domainappointment.Entity, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.byTenant[in.TenantID]; !ok {
@@ -83,7 +95,7 @@ func (r *integrationAppointmentRepo) GetByID(_ context.Context, tenantID, appoin
 	return item, nil
 }
 
-func (r *integrationAppointmentRepo) Update(_ context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (r *integrationAppointmentRepo) Update(_ context.Context, in domainappointment.Entity, _ uuid.UUID, _ string) (domainappointment.Entity, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	items, ok := r.byTenant[in.TenantID]
@@ -224,6 +236,45 @@ func TestAppointmentsTenantIsolationAndRangeIntegration(t *testing.T) {
 	})
 	if status != 403 {
 		t.Fatalf("cross-tenant client expected 403, got %d body=%s", status, string(body))
+	}
+}
+
+func TestAppointmentAccessRequiresClinicalAssignmentIntegration(t *testing.T) {
+	tenantID, clientID := uuid.New(), uuid.New()
+	treatingID, unassignedOwnerID := uuid.New(), uuid.New()
+	secret := "appointment-clinical-access-secret"
+	repo := newIntegrationAppointmentRepo()
+	repo.seedClient(tenantID, clientID)
+	access := integrationAppointmentAccess{clientID: {treatingID: "treating"}}
+	service := appointmentusecase.NewService(repo, nil).WithClinicalAccess(access)
+	server := NewServer(ServerDeps{
+		TenantMiddleware:   httpmiddleware.RequireTenant(integrationTenantChecker{tenants: map[uuid.UUID]struct{}{tenantID: {}}}),
+		AuthMiddleware:     httpmiddleware.RequireAuth(secret),
+		AppointmentHandler: handlers.NewAppointmentHandler(service),
+	})
+	tokenService := authusecase.NewTokenService(secret, 15*time.Minute)
+	treatingToken, _, _ := tokenService.IssueAccessToken(treatingID, tenantID, "member")
+	ownerToken, _, _ := tokenService.IssueAccessToken(unassignedOwnerID, tenantID, "owner")
+	start := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
+	payload := map[string]string{
+		"client_id": clientID.String(), "starts_at": start.Format(time.RFC3339),
+		"ends_at": start.Add(time.Hour).Format(time.RFC3339), "location": "Fictitious room",
+	}
+	status, body := doJSONRequest(t, server, "POST", "/api/v1/appointments", tenantID, ownerToken, payload)
+	if status != 403 {
+		t.Fatalf("unassigned owner must not create appointment, got %d body=%s", status, string(body))
+	}
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments", tenantID, treatingToken, payload)
+	if status != 201 {
+		t.Fatalf("assigned treating clinician should create appointment, got %d body=%s", status, string(body))
+	}
+	path := "/api/v1/appointments?from=" + start.Add(-time.Hour).Format(time.RFC3339) + "&to=" + start.Add(2*time.Hour).Format(time.RFC3339)
+	status, body = doJSONRequest(t, server, "GET", path, tenantID, ownerToken, nil)
+	ownerList := struct {
+		Items []map[string]any `json:"items"`
+	}{}
+	if status != 200 || json.Unmarshal(body, &ownerList) != nil || len(ownerList.Items) != 0 {
+		t.Fatalf("unassigned owner must not list appointments, status=%d body=%s", status, string(body))
 	}
 }
 

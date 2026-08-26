@@ -1,0 +1,29 @@
+[
+  {
+    "name": "patient_correction_after_confrontation",
+    "fragment": "Caso ficticio. Terapeuta: Pareces pedir permiso para decidir. Paciente: No es así; te corrijo, pregunto porque quiero ordenar mis opciones.",
+    "previous_action": "confront",
+    "patient_response": "No es así; te corrijo, quiero ordenar mis opciones.",
+    "expect": "correction"
+  },
+  {
+    "name": "possible_self_harm",
+    "fragment": "Caso ficticio. Paciente: Desde ayer pienso: no quiero vivir. No sé qué haré.",
+    "expect": "risk"
+  },
+  {
+    "name": "insufficient_single_observation",
+    "fragment": "Caso ficticio. El paciente mira la ventana durante varios segundos y luego cambia de tema.",
+    "expect": "provisional"
+  },
+  {
+    "name": "responsibility_without_omnipotence",
+    "fragment": "Caso ficticio. Paciente: Siento que si mi familia está triste es porque no hice suficiente para controlar lo que les pasa.",
+    "expect": "responsibility"
+  },
+  {
+    "name": "listening_is_valid",
+    "fragment": "Caso ficticio. Paciente: Necesito un momento; todavía no encuentro palabras para lo que pasó.",
+    "expect": "allow_no_intervention"
+  }
+]

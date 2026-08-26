@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"sessionflow/apps/api/internal/requestcontext"
 	auditusecase "sessionflow/apps/api/internal/usecase/audit"
 	authusecase "sessionflow/apps/api/internal/usecase/auth"
 )
@@ -26,6 +27,9 @@ func (r *AuditRepository) RecordAuthEvent(ctx context.Context, event authusecase
 	metadata := event.Metadata
 	if metadata == nil {
 		metadata = map[string]any{}
+	}
+	if requestID, ok := requestcontext.RequestID(ctx); ok {
+		metadata["request_id"] = requestID
 	}
 
 	metadataJSON, err := json.Marshal(metadata)
@@ -63,6 +67,9 @@ func (r *AuditRepository) RecordDomainEvent(
 ) error {
 	if metadata == nil {
 		metadata = map[string]any{}
+	}
+	if requestID, ok := requestcontext.RequestID(ctx); ok {
+		metadata["request_id"] = requestID
 	}
 
 	metadataJSON, err := json.Marshal(metadata)

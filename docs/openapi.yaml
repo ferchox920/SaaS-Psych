@@ -14,6 +14,11 @@ tags:
   - name: Clients
   - name: Appointments
   - name: Session Notes
+  - name: Clinical AI
+  - name: Clinical Sessions
+  - name: Session Reports
+  - name: Longitudinal Clinical Core
+  - name: Integrations
   - name: Audit
 
 paths:
@@ -80,14 +85,7 @@ paths:
       summary: Rotacion de refresh token
       security:
         - tenantHeader: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
-            example:
-              refresh_token: "opaque-refresh-token"
+      description: Lee y rota exclusivamente la cookie HttpOnly `sessionflow_refresh`.
       responses:
         "200":
           description: Token rotado
@@ -95,8 +93,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthTokenResponse"
-        "400":
-          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/UnauthorizedError"
         "503":
@@ -108,19 +104,12 @@ paths:
       summary: Revoca refresh token
       security:
         - tenantHeader: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
-            example:
-              refresh_token: "opaque-refresh-token"
+      description: Revoca y expira la cookie HttpOnly `sessionflow_refresh`.
       responses:
         "204":
           description: Logout exitoso
-        "400":
-          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
         "503":
           $ref: "#/components/responses/ServiceUnavailableError"
 
@@ -192,13 +181,30 @@ paths:
           $ref: "#/components/responses/ForbiddenError"
     get:
       tags: [Clients]
-      summary: Listar clientes del tenant
+      summary: Listar clientes activos con asignacion clinica
       security:
         - bearerAuth: []
           tenantHeader: []
       responses:
         "200":
           description: Lista de clientes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientListResponse"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/v1/clients/archived:
+    get:
+      tags: [Clients]
+      summary: Listar clientes archivados con asignacion clinica
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Historia de clientes archivados autorizada
           content:
             application/json:
               schema:
@@ -255,13 +261,205 @@ paths:
           $ref: "#/components/responses/NotFoundError"
     delete:
       tags: [Clients]
-      summary: Eliminar cliente
+      summary: Archivar cliente (compatibilidad)
       security:
         - bearerAuth: []
           tenantHeader: []
       responses:
         "204":
-          description: Cliente eliminado
+          description: Cliente archivado sin borrar historia
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/clients/{id}/archive:
+    parameters:
+      - $ref: "#/components/parameters/PathClientID"
+    post:
+      tags: [Clients]
+      summary: Archivar cliente con motivo
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArchiveClientRequest"
+      responses:
+        "204":
+          description: Cliente archivado; historia preservada
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/clients/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/PathClientID"
+    post:
+      tags: [Clients]
+      summary: Restaurar cliente archivado
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "204":
+          description: Cliente restaurado con sus identificadores y relaciones originales
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/clients/{client_id}/assignments:
+    parameters:
+      - name: client_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Clinical Access]
+      summary: Consultar historia de asignaciones clinicas
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Historia de asignaciones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalAssignmentListResponse"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+    post:
+      tags: [Clinical Access]
+      summary: Conceder asignacion clinica
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantClinicalAssignmentRequest"
+      responses:
+        "201":
+          description: Asignacion concedida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalAssignment"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/clients/{client_id}/assignments/{assignment_id}:
+    parameters:
+      - name: client_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: assignment_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    delete:
+      tags: [Clinical Access]
+      summary: Finalizar asignacion clinica con motivo
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EndClinicalAssignmentRequest"
+      responses:
+        "204":
+          description: Asignacion finalizada; historia preservada
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+
+  /api/v1/clients/{client_id}/access-exceptions:
+    parameters:
+      - name: client_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      tags: [Clinical Access]
+      summary: Consultar historia de accesos excepcionales
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Historia auditada de excepciones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessExceptionListResponse"
+    post:
+      tags: [Clinical Access]
+      summary: Conceder acceso excepcional de solo lectura por hasta 24 horas
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantAccessExceptionRequest"
+      responses:
+        "201":
+          description: Excepcion temporal concedida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessException"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/clients/{client_id}/access-exceptions/{exception_id}:
+    parameters:
+      - name: client_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: exception_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    delete:
+      tags: [Clinical Access]
+      summary: Revocar inmediatamente un acceso excepcional
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RevokeAccessExceptionRequest"
+      responses:
+        "204":
+          description: Excepcion revocada con motivo
         "400":
           $ref: "#/components/responses/ValidationError"
         "404":
@@ -451,7 +649,7 @@ paths:
       tags: [Session Notes]
       summary: Actualizar nota por id
       description: |
-        Solo puede editar el autor o un usuario con rol `owner/admin`.
+        Solo puede editar el autor con asignacion `treating` activa mientras la nota sea borrador.
         `appointment_id` y `author_user_id` son inmutables y no se aceptan en payload.
       security:
         - bearerAuth: []
@@ -478,6 +676,555 @@ paths:
           $ref: "#/components/responses/ForbiddenError"
         "404":
           $ref: "#/components/responses/NotFoundError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/notes/{id}/sign:
+    parameters:
+      - $ref: "#/components/parameters/PathNoteID"
+    post:
+      tags: [Session Notes]
+      summary: Firmar y cerrar un borrador
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Nota firmada; ya no admite sobrescritura
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNote"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/notes/{id}/addenda:
+    parameters:
+      - $ref: "#/components/parameters/PathNoteID"
+    post:
+      tags: [Session Notes]
+      summary: Agregar adenda documentada a una nota firmada
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddendumRequest"
+      responses:
+        "200":
+          description: Adenda incorporada como nueva version inmutable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNote"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/notes/{id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/PathNoteID"
+    get:
+      tags: [Session Notes]
+      summary: Consultar historia inmutable de la nota
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Versiones autorizadas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionNoteVersionListResponse"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/clinical-ai/status:
+    get:
+      tags: [Clinical AI]
+      summary: Estado del proveedor local y modelo configurado
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Ollama local disponible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalModelStatus"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/clinical-ai/models:
+    get:
+      tags: [Clinical AI]
+      summary: Modelos ya instalados en Ollama
+      description: No descarga ni reemplaza modelos.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Modelos locales instalados
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LocalModelInfo"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/clinical-ai/warm:
+    post:
+      tags: [Clinical AI]
+      summary: Precarga el modelo local configurado
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Modelo cargado o mantenido en memoria
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/clinical-ai/unload:
+    post:
+      tags: [Clinical AI]
+      summary: Descarga el modelo configurado de memoria
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Modelo descargado de memoria
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/clinical-ai/analyze-live:
+    post:
+      tags: [Clinical AI]
+      summary: Analiza un fragmento con el supervisor clínico local
+      description: |
+        Requiere asignación tratante activa sobre el paciente de la cita. La respuesta usa SSE.
+        Los eventos `status` y `progress` no contienen material clínico; `result` se emite solo
+        después de validar el JSON y aplicar guardas deterministas. Persiste solo la salida validada
+        como sugerencia separada; el fragmento de entrada no se guarda en ese ledger.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeLiveRequest"
+      responses:
+        "200":
+          description: Flujo SSE con status, progress, result, done o error
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+
+  /api/v1/clinical-ai/review-session:
+    post:
+      tags: [Clinical AI]
+      summary: Revisa una sesion completa con prioridad inferior al modo en vivo
+      description: El texto es transitorio; solo se guarda la salida validada como sugerencia separada. Una solicitud en vivo cancela la revision activa.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewSessionRequest"
+      responses:
+        "200":
+          description: Flujo SSE con status, progress, result, done o error
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/UnauthorizedError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/appointments/{appointment_id}/ai-suggestions:
+    parameters:
+      - $ref: "#/components/parameters/PathAppointmentIDAlt"
+    get:
+      tags: [Clinical AI]
+      summary: Lista sugerencias de IA separadas del registro clínico
+      description: Requiere asignación tratante o supervisora activa y audita la lectura.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Ledger de sugerencias de la cita
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClinicalSuggestion"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/clinical-ai/suggestions/{suggestion_id}/decision:
+    parameters:
+      - name: suggestion_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags: [Clinical AI]
+      summary: Registra la decisión clínica sobre una sugerencia
+      description: No promueve la sugerencia automáticamente a la formulación longitudinal.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecideClinicalSuggestionRequest"
+      responses:
+        "200":
+          description: Decisión registrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalSuggestion"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/clients/{client_id}/formulations:
+    parameters:
+      - $ref: "#/components/parameters/PathClinicalClientID"
+    get:
+      tags: [Clinical AI]
+      summary: Historial versionado de formulación longitudinal
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Formulaciones visibles por asignación clínica
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ClinicalFormulationSnapshot"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+    post:
+      tags: [Clinical AI]
+      summary: Crea un borrador de formulación versionada
+      description: Requiere asignación tratante. El borrador no alimenta al modelo hasta aprobarse.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClinicalFormulationRequest"
+      responses:
+        "201":
+          description: Borrador creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalFormulationSnapshot"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+
+  /api/v1/clients/{client_id}/formulations/{snapshot_id}/approve:
+    parameters:
+      - $ref: "#/components/parameters/PathClinicalClientID"
+      - name: snapshot_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Clinical AI]
+      summary: Aprueba explícitamente una formulación
+      description: Requiere asignación tratante y conserva como superseded la versión aprobada anterior.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Formulación aprobada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClinicalFormulationSnapshot"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/clinical-transcription/status:
+    get:
+      tags: [Clinical AI]
+      summary: Estado del transcriptor local efímero
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Estado y configuración no sensible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalTranscriptionStatus"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/appointments/{appointment_id}/transcription:
+    parameters:
+      - $ref: "#/components/parameters/PathAppointmentIDAlt"
+    post:
+      tags: [Clinical AI]
+      summary: Transcribe un fragmento de audio en el sidecar local
+      description: |
+        Requiere asignación tratante, consentimiento explícito en header y audio efímero.
+        El audio se elimina al finalizar o fallar y la transcripción no se persiste.
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - name: X-Clinical-Audio-Consent
+          in: header
+          required: true
+          schema:
+            type: boolean
+            enum: [true]
+      requestBody:
+        required: true
+        content:
+          audio/webm:
+            schema:
+              type: string
+              format: binary
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+          audio/mp4:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Texto local editable y métricas no sensibles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocalTranscriptionResult"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "403":
+          $ref: "#/components/responses/ForbiddenError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "413":
+          description: Audio sobre el límite efímero configurado
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/integrations/google-calendar/status:
+    get:
+      tags: [Integrations]
+      summary: Estado de la conexión personal con Google Calendar
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: Estado no sensible de la integración
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleCalendarStatus"
+
+  /api/v1/integrations/google-calendar/authorize:
+    post:
+      tags: [Integrations]
+      summary: Inicia OAuth con state de un solo uso y PKCE
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "200":
+          description: URL de autorización de Google
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorization_url]
+                properties:
+                  authorization_url:
+                    type: string
+                    format: uri
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableError"
+
+  /api/v1/integrations/google-calendar/callback:
+    get:
+      tags: [Integrations]
+      summary: Callback OAuth de Google
+      parameters:
+        - name: state
+          in: query
+          schema: { type: string }
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: error
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirección a la agenda con el resultado de la conexión
+
+  /api/v1/integrations/google-calendar/events:
+    get:
+      tags: [Integrations]
+      summary: Lista eventos temporizados aún no asociados
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Eventos candidatos del rango, sin persistirlos localmente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GoogleCalendarCandidate"
+
+  /api/v1/integrations/google-calendar/events/{event_id}/import:
+    post:
+      tags: [Integrations]
+      summary: Asocia un evento de Google a un paciente y crea el turno local
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id]
+              properties:
+                client_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Turno creado y vinculado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Appointment"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+
+  /api/v1/integrations/google-calendar/appointments/{appointment_id}/push:
+    post:
+      tags: [Integrations]
+      summary: Crea o actualiza en Google el turno local seleccionado
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      parameters:
+        - $ref: "#/components/parameters/PathAppointmentIDAlt"
+      responses:
+        "200":
+          description: Vínculo sincronizado
+
+  /api/v1/integrations/google-calendar/connection:
+    delete:
+      tags: [Integrations]
+      summary: Revoca y elimina el token de la conexión personal
+      security:
+        - bearerAuth: []
+          tenantHeader: []
+      responses:
+        "204":
+          description: Conexión revocada
 
   /api/v1/audit:
     get:
@@ -512,6 +1259,210 @@ paths:
         "403":
           $ref: "#/components/responses/ForbiddenError"
 
+  /api/v1/clinical-sessions:
+    post:
+      tags: [Clinical Sessions]
+      summary: Crear un encuentro clínico real en progreso
+      security: [{bearerAuth: [], tenantHeader: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, started_at]
+              properties:
+                client_id: {type: string, format: uuid}
+                appointment_id: {type: string, format: uuid, nullable: true}
+                started_at: {type: string, format: date-time}
+      responses:
+        "201": {description: Sesión clínica creada}
+        "400": {$ref: "#/components/responses/ValidationError"}
+        "401": {$ref: "#/components/responses/UnauthorizedError"}
+        "403": {$ref: "#/components/responses/ForbiddenError"}
+        "409": {description: Ya existe una sesión no anulada para la cita}
+
+  /api/v1/clinical-sessions/{id}:
+    get:
+      tags: [Clinical Sessions]
+      summary: Obtener sesión clínica
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Sesión clínica}
+        "404": {description: No encontrada}
+
+  /api/v1/clients/{client_id}/clinical-sessions:
+    get:
+      tags: [Clinical Sessions]
+      summary: Listar sesiones clínicas visibles de un cliente
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: client_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Lista de sesiones clínicas}
+
+  /api/v1/clinical-sessions/{id}/complete:
+    post:
+      tags: [Clinical Sessions]
+      summary: Completar irreversiblemente una sesión en progreso
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Sesión completada}
+        "409": {description: Transición inválida}
+
+  /api/v1/clinical-sessions/{id}/void:
+    post:
+      tags: [Clinical Sessions]
+      summary: Anular irreversiblemente una sesión en progreso
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Sesión anulada}
+        "409": {description: Transición inválida}
+
+  /api/v1/clinical-sessions/{id}/reports/generate:
+    post:
+      tags: [Session Reports]
+      summary: Generar un draft session-report-v1.1 desde texto efímero
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_text]
+              properties: {session_text: {type: string, minLength: 20, maxLength: 40000}}
+      responses:
+        "201": {description: ClinicalAIRun succeeded y report draft persistido}
+        "422": {description: Salida IA incompatible con session-report-v1.1}
+
+  /api/v1/clinical-sessions/{id}/reports:
+    get:
+      tags: [Session Reports]
+      summary: Listar versiones de informes de una sesión
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Historial de reports}
+
+  /api/v1/session-reports/{report_id}:
+    get:
+      tags: [Session Reports]
+      summary: Obtener un informe
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: report_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Informe}
+    put:
+      tags: [Session Reports]
+      summary: Editar con optimistic concurrency; un informe aprobado produce nueva versión draft
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: report_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Draft actualizado o nueva versión draft}
+        "409": {description: Conflicto de revisión}
+
+  /api/v1/session-reports/{report_id}/approve:
+    post:
+      tags: [Session Reports]
+      summary: Aprobar explícitamente un report sin mutar memoria longitudinal
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: report_id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "200": {description: Report aprobado; la versión aprobada previa queda superseded}
+        "409": {description: Report no está en draft}
+
+  /api/v1/clinical-sessions/{id}/longitudinal-analysis:
+    post:
+      tags: [Longitudinal Clinical Core]
+      summary: Proponer un ClinicalDiff desde un SessionReport aprobado
+      description: La IA solo crea una propuesta. No modifica el estado longitudinal antes del merge humano.
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        "201": {description: Nuevo diff pending_review, content: {application/json: {schema: {$ref: "#/components/schemas/LongitudinalAnalysisResponse"}}}}
+        "200": {description: Diff abierto reutilizado, content: {application/json: {schema: {$ref: "#/components/schemas/LongitudinalAnalysisResponse"}}}}
+        "409": {description: Estado o sesión incompatible}
+
+  /api/v1/clients/{id}/longitudinal-state:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Reconstruir el estado longitudinal aprobado
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: Estado normalizado, content: {application/json: {schema: {$ref: "#/components/schemas/ClientLongitudinalState"}}}}}
+
+  /api/v1/clients/{id}/evidence:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Listar evidencia clínica y su lifecycle
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: Evidencia longitudinal}}
+  /api/v1/clients/{id}/events:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Listar eventos clínicos
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: Eventos longitudinales}}
+  /api/v1/clients/{id}/processes:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Listar procesos clínicos
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: Procesos longitudinales}}
+  /api/v1/clients/{id}/hypotheses:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Listar hipótesis y evidencia supporting/contradicting
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: Hipótesis longitudinales}}
+  /api/v1/clients/{id}/clinical-diffs:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Listar propuestas longitudinales
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{$ref: "#/components/parameters/PathClientID"}]
+      responses: {"200": {description: ClinicalDiff history}}
+
+  /api/v1/clinical-diffs/{id}:
+    get:
+      tags: [Longitudinal Clinical Core]
+      summary: Obtener un ClinicalDiff con operaciones y propuesta original
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses: {"200": {description: ClinicalDiff, content: {application/json: {schema: {$ref: "#/components/schemas/ClinicalDiff"}}}}}
+  /api/v1/clinical-diffs/{id}/operations/{operation_id}/decision:
+    put:
+      tags: [Longitudinal Clinical Core]
+      summary: Aprobar, modificar o rechazar una operación una sola vez
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: operation_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/ClinicalDiffDecisionRequest"}}}}
+      responses:
+        "200": {description: Diff recalculado}
+        "409": {description: Operación ya decidida o revisión desactualizada}
+  /api/v1/clinical-diffs/{id}/merge:
+    post:
+      tags: [Longitudinal Clinical Core]
+      summary: Fusionar atómicamente operaciones revisadas por una persona CA-W
+      security: [{bearerAuth: [], tenantHeader: []}]
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [expected_diff_revision], properties: {expected_diff_revision: {type: integer, minimum: 1}}}}}
+      responses:
+        "200": {description: Diff fusionado o respuesta idempotente}
+        "409": {description: Diff no aprobado o estado base desactualizado}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -526,6 +1477,13 @@ components:
   parameters:
     PathClientID:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PathClinicalClientID:
+      name: client_id
       in: path
       required: true
       schema:
@@ -712,6 +1670,74 @@ components:
                 reason: limit_exceeded
 
   schemas:
+    ClinicalEvidence:
+      type: object
+      required: [id, tenant_id, client_id, source_type, source_id, source_version, source_item_id, epistemic_type, statement, status, version, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        source_type: {type: string, enum: [session_report]}
+        source_id: {type: string, format: uuid}
+        source_version: {type: integer, minimum: 1}
+        source_item_id: {type: string}
+        epistemic_type: {type: string, enum: [patient_report, therapist_observation, measurement, documented_fact, inference]}
+        statement: {type: string}
+        status: {type: string, enum: [active, superseded, invalidated]}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ClinicalDiffOperation:
+      type: object
+      required: [id, sequence, operation_type, target_entity_id, original_proposal, review_status]
+      properties:
+        id: {type: string, format: uuid}
+        sequence: {type: integer, minimum: 1}
+        operation_type: {type: string, enum: [create_evidence, invalidate_evidence, create_event, approve_event, link_event_process, create_process, update_process, close_process, reopen_process, create_hypothesis, update_hypothesis, link_supporting_evidence, link_contradicting_evidence, strengthen_hypothesis, weaken_hypothesis, retire_hypothesis]}
+        target_entity_id: {type: string, format: uuid}
+        expected_entity_version: {type: integer, nullable: true}
+        original_proposal: {type: object, additionalProperties: true}
+        human_modification: {type: object, nullable: true, additionalProperties: true}
+        review_status: {type: string, enum: [pending, approved, modified, rejected]}
+    ClinicalDiff:
+      type: object
+      required: [id, tenant_id, client_id, status, base_state_version, revision, is_stale, uncertainties, operations, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        tenant_id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        status: {type: string, enum: [draft, pending_review, partially_reviewed, approved, rejected, merged]}
+        base_state_version: {type: integer, format: int64}
+        revision: {type: integer, minimum: 1}
+        is_stale: {type: boolean}
+        uncertainties: {type: array, items: {type: object}}
+        operations: {type: array, items: {$ref: "#/components/schemas/ClinicalDiffOperation"}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ClinicalDiffDecisionRequest:
+      type: object
+      required: [expected_diff_revision, decision]
+      properties:
+        expected_diff_revision: {type: integer, minimum: 1}
+        decision: {type: string, enum: [approved, modified, rejected]}
+        modification: {type: object, nullable: true, additionalProperties: true}
+    LongitudinalAnalysisResponse:
+      type: object
+      required: [diff, reused]
+      properties:
+        diff: {$ref: "#/components/schemas/ClinicalDiff"}
+        reused: {type: boolean}
+    ClientLongitudinalState:
+      type: object
+      required: [client_id, state_version, processes, unassigned_hypotheses, recent_events, active_evidence, open_proposals]
+      properties:
+        client_id: {type: string, format: uuid}
+        state_version: {type: integer, format: int64}
+        processes: {type: array, items: {type: object}}
+        unassigned_hypotheses: {type: array, items: {type: object}}
+        recent_events: {type: array, items: {type: object}}
+        active_evidence: {type: array, items: {$ref: "#/components/schemas/ClinicalEvidence"}}
+        open_proposals: {type: array, items: {$ref: "#/components/schemas/ClinicalDiff"}}
     HealthResponse:
       type: object
       properties:
@@ -746,19 +1772,10 @@ components:
           type: string
       required: [email, password]
 
-    RefreshRequest:
-      type: object
-      properties:
-        refresh_token:
-          type: string
-      required: [refresh_token]
-
     AuthTokenResponse:
       type: object
       properties:
         access_token:
-          type: string
-        refresh_token:
           type: string
         token_type:
           type: string
@@ -766,7 +1783,7 @@ components:
         expires_in:
           type: integer
           format: int64
-      required: [access_token, refresh_token, token_type, expires_in]
+      required: [access_token, token_type, expires_in]
 
     MeResponse:
       type: object
@@ -792,6 +1809,96 @@ components:
           type: string
       required: [fullname]
 
+    ArchiveClientRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+      required: [reason]
+
+    GrantClinicalAssignmentRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        relationship:
+          type: string
+          enum: [treating, supervisor]
+      required: [user_id, relationship]
+
+    EndClinicalAssignmentRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+      required: [reason]
+
+    ClinicalAssignment:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        relationship: {type: string, enum: [treating, supervisor]}
+        granted_by_user_id: {type: string, format: uuid}
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time, nullable: true}
+        ended_by_user_id: {type: string, format: uuid, nullable: true}
+        end_reason: {type: string}
+        created_at: {type: string, format: date-time}
+      required: [id, client_id, user_id, relationship, granted_by_user_id, starts_at, created_at]
+
+    ClinicalAssignmentListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClinicalAssignment"
+      required: [items]
+
+    GrantAccessExceptionRequest:
+      type: object
+      properties:
+        user_id: {type: string, format: uuid}
+        reason: {type: string}
+        purpose: {type: string}
+        expires_at: {type: string, format: date-time}
+      required: [user_id, reason, purpose, expires_at]
+
+    RevokeAccessExceptionRequest:
+      type: object
+      properties:
+        reason: {type: string}
+      required: [reason]
+
+    AccessException:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        client_id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        granted_by_user_id: {type: string, format: uuid}
+        reason: {type: string}
+        purpose: {type: string}
+        starts_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time, nullable: true}
+        revoked_by_user_id: {type: string, format: uuid, nullable: true}
+        revoke_reason: {type: string}
+        created_at: {type: string, format: date-time}
+      required: [id, client_id, user_id, granted_by_user_id, reason, purpose, starts_at, expires_at, created_at]
+
+    AccessExceptionListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AccessException"
+      required: [items]
+
     Client:
       type: object
       properties:
@@ -813,6 +1920,16 @@ components:
         updated_at:
           type: string
           format: date-time
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+        archived_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        archive_reason:
+          type: string
       required: [id, tenant_id, fullname, contact, notes_public, created_at, updated_at]
 
     ClientListResponse:
@@ -894,6 +2011,382 @@ components:
             $ref: "#/components/schemas/Appointment"
       required: [items]
 
+    GoogleCalendarStatus:
+      type: object
+      required: [enabled, connected, reauthorization_required]
+      properties:
+        enabled: { type: boolean }
+        connected: { type: boolean }
+        reauthorization_required: { type: boolean }
+        calendar_id: { type: string }
+        last_sync_at: { type: string, format: date-time }
+
+    GoogleCalendarCandidate:
+      type: object
+      required: [event_id, summary, location, starts_at, ends_at]
+      properties:
+        event_id: { type: string }
+        summary: { type: string }
+        location: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        html_link: { type: string, format: uri }
+
+    LocalModelInfo:
+      type: object
+      required: [name, loaded, configured]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+          format: int64
+        loaded:
+          type: boolean
+        configured:
+          type: boolean
+
+    LocalModelStatus:
+      type: object
+      required: [available, busy, configured_model]
+      properties:
+        available:
+          type: boolean
+        busy:
+          type: boolean
+        configured_model:
+          type: string
+        message:
+          type: string
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/LocalModelInfo"
+
+    LocalTranscriptionStatus:
+      type: object
+      required: [enabled, available, busy]
+      properties:
+        enabled:
+          type: boolean
+        available:
+          type: boolean
+        busy:
+          type: boolean
+        engine:
+          type: string
+        model:
+          type: string
+        device:
+          type: string
+        compute_type:
+          type: string
+
+    LocalTranscriptionResult:
+      type: object
+      required: [text, language, duration_seconds, transcription_seconds, real_time_factor, engine, model]
+      properties:
+        text:
+          type: string
+        language:
+          type: string
+        duration_seconds:
+          type: number
+          format: double
+        transcription_seconds:
+          type: number
+          format: double
+        real_time_factor:
+          type: number
+          format: double
+        engine:
+          type: string
+        model:
+          type: string
+
+    AnalyzeLiveRequest:
+      type: object
+      required: [appointment_id, fragment]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        fragment:
+          type: string
+          minLength: 1
+          maxLength: 12000
+        previous_intervention:
+          type: string
+        previous_action:
+          $ref: "#/components/schemas/ClinicalNowAction"
+        patient_response:
+          type: string
+
+    ReviewSessionRequest:
+      type: object
+      required: [appointment_id, session_text]
+      properties:
+        appointment_id:
+          type: string
+          format: uuid
+        session_text:
+          type: string
+          minLength: 20
+          maxLength: 40000
+
+    ClinicalContextItem:
+      type: object
+      required: [source_id, kind, summary]
+      properties:
+        source_id:
+          type: string
+        kind:
+          type: string
+          enum: [fact, inference, hypothesis]
+        summary:
+          type: string
+
+    ClinicalNowAction:
+      type: string
+      enum: [listen, clarify, reflect, explore, confront, restructure, resignify, values, regulate, no_intervention]
+
+    ClinicalAnalysisResult:
+      type: object
+      description: JSON validado que solo se emite en el evento SSE result.
+      required: [mode, node, hypothesis, evidence, now, caution, suggested_interventions, therapist_meta, risk]
+      properties:
+        mode:
+          type: string
+          enum: [live]
+        node:
+          type: string
+        hypothesis:
+          type: object
+          required: [text, epistemic_level, traffic_light]
+          properties:
+            text:
+              type: string
+            epistemic_level:
+              type: string
+              enum: [fact, inference, hypothesis]
+            traffic_light:
+              type: string
+              enum: [green, yellow, red]
+        evidence:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            required: [source_id, kind, summary]
+            properties:
+              source_id:
+                type: string
+              kind:
+                type: string
+                enum: [fact, inference]
+              summary:
+                type: string
+        now:
+          $ref: "#/components/schemas/ClinicalNowAction"
+        caution:
+          type: string
+        suggested_interventions:
+          type: array
+          maxItems: 2
+          items:
+            type: string
+        therapist_meta:
+          type: string
+          nullable: true
+        risk:
+          type: object
+          required: [detected, category, requires_human_assessment]
+          properties:
+            detected:
+              type: boolean
+            category:
+              type: string
+              nullable: true
+            requires_human_assessment:
+              type: boolean
+
+    ClinicalReviewResult:
+      type: object
+      required: [mode, emerging_formulation, effective_interventions, weak_or_risky_interventions, hypothesis_calibration, patient_responses, alliance, therapist_patterns, next_focus, evidence, caution, risk]
+      properties:
+        mode: { type: string, enum: [review] }
+        emerging_formulation: { type: string }
+        effective_interventions:
+          type: array
+          maxItems: 6
+          items: { type: string }
+        weak_or_risky_interventions:
+          type: array
+          maxItems: 6
+          items: { type: string }
+        hypothesis_calibration: { type: string }
+        patient_responses: { type: string }
+        alliance: { type: string }
+        therapist_patterns:
+          type: array
+          maxItems: 6
+          items: { type: string }
+        next_focus:
+          type: array
+          maxItems: 6
+          items: { type: string }
+        evidence:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [source_id, kind, summary]
+            properties:
+              source_id: { type: string }
+              kind: { type: string, enum: [fact, inference] }
+              summary: { type: string }
+        caution: { type: string }
+        risk:
+          type: object
+          required: [detected, category, requires_human_assessment]
+          properties:
+            detected: { type: boolean }
+            category: { type: string, nullable: true }
+            requires_human_assessment: { type: boolean }
+
+    DecideClinicalSuggestionRequest:
+      type: object
+      required: [disposition]
+      properties:
+        disposition:
+          type: string
+          enum: [accepted, corrected, discarded, postponed]
+        correction_text:
+          type: string
+          description: Obligatorio cuando disposition es corrected.
+        reason:
+          type: string
+
+    ClinicalSuggestion:
+      type: object
+      required: [id, tenant_id, client_id, appointment_id, created_by_user_id, mode, prompt_version, result, disposition, correction_text, decision_reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        appointment_id:
+          type: string
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum: [live, review]
+        prompt_version:
+          type: string
+        result:
+          $ref: "#/components/schemas/ClinicalAnalysisResult"
+        disposition:
+          type: string
+          enum: [pending, accepted, corrected, discarded, postponed]
+        correction_text:
+          type: string
+        decision_reason:
+          type: string
+        decided_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ClinicalFormulationAnchor:
+      type: object
+      required: [source_id, kind, summary]
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_id:
+          type: string
+        kind:
+          type: string
+          enum: [fact, hypothesis]
+        summary:
+          type: string
+        traffic_light:
+          type: string
+          enum: [green, yellow, red]
+          nullable: true
+        source_suggestion_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    CreateClinicalFormulationRequest:
+      type: object
+      required: [approved_summary, anchors]
+      properties:
+        approved_summary:
+          type: string
+          maxLength: 4000
+        anchors:
+          type: array
+          minItems: 2
+          maxItems: 4
+          items:
+            $ref: "#/components/schemas/ClinicalFormulationAnchor"
+
+    ClinicalFormulationSnapshot:
+      type: object
+      required: [id, tenant_id, client_id, version, approved_summary, status, created_by_user_id, created_at, anchors]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        approved_summary:
+          type: string
+        status:
+          type: string
+          enum: [draft, approved, superseded]
+        created_by_user_id:
+          type: string
+          format: uuid
+        approved_by_user_id:
+          type: string
+          format: uuid
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        anchors:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClinicalFormulationAnchor"
     CreateSessionNoteRequest:
       type: object
       properties:
@@ -911,6 +2404,15 @@ components:
         is_private:
           type: boolean
       required: [body]
+
+    AddendumRequest:
+      type: object
+      properties:
+        body:
+          type: string
+        reason:
+          type: string
+      required: [body, reason]
 
     SessionNote:
       type: object
@@ -931,13 +2433,46 @@ components:
           type: string
         is_private:
           type: boolean
+        status:
+          type: string
+          enum: [draft, signed]
+        current_version:
+          type: integer
+          minimum: 1
+        signed_at:
+          type: string
+          format: date-time
+          nullable: true
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-      required: [id, tenant_id, appointment_id, author_user_id, body, is_private, created_at, updated_at]
+      required: [id, tenant_id, appointment_id, author_user_id, body, is_private, status, current_version, created_at, updated_at]
+
+    SessionNoteVersion:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        note_id: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        body: {type: string}
+        is_private: {type: boolean}
+        change_kind: {type: string, enum: [draft, correction, addendum]}
+        change_reason: {type: string}
+        actor_user_id: {type: string, format: uuid}
+        created_at: {type: string, format: date-time}
+      required: [id, note_id, version, body, is_private, change_kind, change_reason, actor_user_id, created_at]
+
+    SessionNoteVersionListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionNoteVersion"
+      required: [items]
 
     SessionNoteListResponse:
       type: object

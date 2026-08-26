@@ -27,7 +27,7 @@ Tracing/observabilidad:
 | Modulo | Cobertura minima requerida | Evidencia/Comando |
 | --- | --- | --- |
 | Auth + RBAC | Unit + integration (login/refresh/logout, guards) | `go test ./...` |
-| Multi-tenant DB hardening | Constraints/FK compuestas + integration PG cross-tenant | `RUN_PG_INTEGRATION=1 go test ./internal/infra/db` |
+| Multi-tenant DB hardening | Constraints/FK compuestas + integration PG cross-tenant a nivel repository | `RUN_PG_INTEGRATION=1 go test -count=1 ./internal/infra/db` |
 | Clients | Usecases + endpoints + integration tenant isolation | `go test ./internal/http ./internal/usecase/client` |
 | Appointments | Regla no-solapamiento + lifecycle cancel + integration rango/aislamiento | `go test ./internal/http ./internal/usecase/appointment` |
 | Session Notes | Privacidad + update permissions + integration | `go test ./internal/http ./internal/usecase/sessionnote` |
@@ -63,9 +63,10 @@ golangci-lint run --config .golangci.yml --timeout=3m
 ### B. Integracion Postgres/Redis
 
 - [ ] Servicios arriba: Postgres + Redis.
+- [ ] No hay contenedores legacy ocupando `5432`/`6379`.
 - [ ] Preflight local valida credenciales/estado de Postgres y respuesta de Redis.
 - [ ] Migraciones aplicadas.
-- [ ] Tests con `RUN_PG_INTEGRATION=1` pasan.
+- [ ] Tests con `RUN_PG_INTEGRATION=1` pasan con el mismo alcance que CI (`./internal/http ./internal/infra/db`).
 
 Comandos:
 
@@ -74,6 +75,7 @@ docker compose up -d postgres redis
 make integration-preflight
 make db-prepare
 make test-integration-db
+make test-integration-db-reset
 ```
 
 Si `make integration-preflight` falla por drift del volumen local de Postgres (credenciales/estado incompatibles), recuperar el entorno antes de seguir:
@@ -82,6 +84,19 @@ Si `make integration-preflight` falla por drift del volumen local de Postgres (c
 make db-reset-local
 make migrate-up
 make integration-preflight
+```
+
+Si falla por conflicto de contenedores legacy o puertos ocupados, limpiar primero el host:
+
+```bash
+docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker compose down --remove-orphans
+```
+
+Para validar que la recuperacion local es realmente reproducible, correr al menos una vez:
+
+```bash
+make test-integration-db-reset
 ```
 
 ### C. Contrato API (OpenAPI + Swagger)

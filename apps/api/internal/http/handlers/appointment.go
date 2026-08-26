@@ -100,6 +100,10 @@ func (h *AppointmentHandler) List(c echo.Context) error {
 	if !ok {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
+	principal, ok := httpmiddleware.PrincipalFromContext(c.Request().Context())
+	if !ok {
+		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "auth context missing")
+	}
 
 	from, err := time.Parse(time.RFC3339, c.QueryParam("from"))
 	if err != nil {
@@ -111,9 +115,10 @@ func (h *AppointmentHandler) List(c echo.Context) error {
 	}
 
 	items, err := h.service.ListByRange(c.Request().Context(), appointmentusecase.ListInput{
-		TenantID: tenantID,
-		From:     from,
-		To:       to,
+		TenantID:    tenantID,
+		ActorUserID: principal.UserID,
+		From:        from,
+		To:          to,
 	})
 	if err != nil {
 		return h.handleAppointmentError(c, err)

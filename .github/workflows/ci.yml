@@ -111,4 +111,4 @@ jobs:
         run: migrate -path migrations -database "$DATABASE_URL" up
 
       - name: Run integration tests
-        run: go test ./internal/http ./internal/infra/db
+        run: go test -count=1 ./internal/http ./internal/infra/db

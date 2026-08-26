@@ -23,6 +23,7 @@ Roadmap vivo del proyecto SessionFlow, alineado con `PROGRESS/PROGRESS_INDEX.md`
 | S8 | Correlacion logs-traces + contrato OpenAPI 3.0 + Swagger UI local | DONE | [S8_8](./PROGRESS/S8/S8_8.md), [S8_8.1](./PROGRESS/S8/S8_8.1.md), [S8_8.2](./PROGRESS/S8/S8_8.2.md), [S8_8.3](./PROGRESS/S8/S8_8.3.md) |
 | S9 | Hardening final + formalizacion de dominio notes/appointments + stack metricas local | DONE | [S9_9](./PROGRESS/S9/S9_9.md), [S9_9.1](./PROGRESS/S9/S9_9.1.md), [S9_9.2](./PROGRESS/S9/S9_9.2.md), [S9_9.3](./PROGRESS/S9/S9_9.3.md), [S9_9.4](./PROGRESS/S9/S9_9.4.md) |
 | S10 | Alineacion documental de roadmap vs ejecucion | DONE | [S10_10](./PROGRESS/S10/S10_10.md) |
+| S11 | Hardening operativo/documental final: preflight/recovery local, baseline de entorno, metricas de dominio, lifecycle y gobernanza de PR | DONE | [S11_11](./PROGRESS/S11/S11_11.md), [S11_11.5](./PROGRESS/S11/S11_11.5.md), [S11_11.6](./PROGRESS/S11/S11_11.6.md), [S11_11.7](./PROGRESS/S11/S11_11.7.md), [S11_11.8](./PROGRESS/S11/S11_11.8.md), [S11_11.9](./PROGRESS/S11/S11_11.9.md), [S11_11.10](./PROGRESS/S11/S11_11.10.md) |
 
 ## Estado de hitos de cierre
 
@@ -39,7 +40,7 @@ Roadmap vivo del proyecto SessionFlow, alineado con `PROGRESS/PROGRESS_INDEX.md`
 | CI (test + lint + build + integration DB) | DONE | [S5_5.2](./PROGRESS/S5/S5_5.2.md) |
 | README/portfolio final | DONE | [S6_6](./PROGRESS/S6/S6_6.md) |
 
-## Backlog propuesto (post-S10)
+## Backlog propuesto (post-S11)
 
 | Paso | Alcance | Estado | Evidencia / destino |
 | --- | --- | --- | --- |
@@ -52,6 +53,6 @@ Roadmap vivo del proyecto SessionFlow, alineado con `PROGRESS/PROGRESS_INDEX.md`
 
 ## Notas
 
-- Este archivo queda sincronizado con `PROGRESS/PROGRESS_INDEX.md` hasta `S10_10.6`.
-- Se corrige la inconsistencia previa: `S10_10.1` a `S10_10.6` estaban marcados como `TODO` en este roadmap y ahora figuran `DONE`, en linea con `PROGRESS/PROGRESS_INDEX.md`.
+- Este archivo queda sincronizado con `PROGRESS/PROGRESS_INDEX.md` hasta `S11_11.10`.
+- `S11` consolida el cierre operativo/documental reciente: preflight y recovery local, baseline de entorno, metricas de dominio, lifecycle hardening y guardrails de revision.
 - Fuente de verdad para estados: `PROGRESS/PROGRESS_INDEX.md` manda ante cualquier drift.

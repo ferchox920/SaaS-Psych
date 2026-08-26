@@ -15,24 +15,43 @@ import (
 )
 
 type AppointmentRepository struct {
-	pool *pgxpool.Pool
+	pool               *pgxpool.Pool
+	transactionalAudit bool
 }
+
+func (r *AppointmentRepository) WithTransactionalAudit() *AppointmentRepository {
+	r.transactionalAudit = true
+	return r
+}
+
+func (r *AppointmentRepository) WritesAreTransactionallyAudited() bool { return r.transactionalAudit }
 
 func NewAppointmentRepository(pool *pgxpool.Pool) *AppointmentRepository {
 	return &AppointmentRepository{pool: pool}
 }
 
-func (r *AppointmentRepository) Create(ctx context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (r *AppointmentRepository) Create(ctx context.Context, in domainappointment.Entity, actorUserID uuid.UUID) (domainappointment.Entity, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domainappointment.Entity{}, fmt.Errorf("begin create appointment: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	const query = `
 		INSERT INTO appointments (id, tenant_id, client_id, starts_at, ends_at, status, location, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id, tenant_id, client_id, starts_at, ends_at, status, location, created_at, updated_at
 	`
-	out, err := r.scanAppointment(r.pool.QueryRow(ctx, query,
+	out, err := r.scanAppointment(tx.QueryRow(ctx, query,
 		in.ID, in.TenantID, in.ClientID, in.StartsAt, in.EndsAt, in.Status, in.Location, in.CreatedAt, in.UpdatedAt,
 	))
 	if err != nil {
 		return domainappointment.Entity{}, fmt.Errorf("insert appointment: %w", err)
+	}
+	if err := r.insertAudit(ctx, tx, in.TenantID, actorUserID, "appointment.create", in.ID); err != nil {
+		return domainappointment.Entity{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domainappointment.Entity{}, fmt.Errorf("commit create appointment: %w", err)
 	}
 	return out, nil
 }
@@ -95,14 +114,19 @@ func (r *AppointmentRepository) GetByID(ctx context.Context, tenantID, appointme
 	return out, nil
 }
 
-func (r *AppointmentRepository) Update(ctx context.Context, in domainappointment.Entity) (domainappointment.Entity, error) {
+func (r *AppointmentRepository) Update(ctx context.Context, in domainappointment.Entity, actorUserID uuid.UUID, action string) (domainappointment.Entity, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domainappointment.Entity{}, fmt.Errorf("begin update appointment: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 	const query = `
 		UPDATE appointments
 		SET starts_at = $3, ends_at = $4, status = $5, location = $6, updated_at = $7
 		WHERE tenant_id = $1 AND id = $2
 		RETURNING id, tenant_id, client_id, starts_at, ends_at, status, location, created_at, updated_at
 	`
-	out, err := r.scanAppointment(r.pool.QueryRow(ctx, query,
+	out, err := r.scanAppointment(tx.QueryRow(ctx, query,
 		in.TenantID, in.ID, in.StartsAt, in.EndsAt, in.Status, in.Location, in.UpdatedAt,
 	))
 	if err != nil {
@@ -111,7 +135,20 @@ func (r *AppointmentRepository) Update(ctx context.Context, in domainappointment
 		}
 		return domainappointment.Entity{}, fmt.Errorf("update appointment: %w", err)
 	}
+	if err := r.insertAudit(ctx, tx, in.TenantID, actorUserID, action, in.ID); err != nil {
+		return domainappointment.Entity{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domainappointment.Entity{}, fmt.Errorf("commit update appointment: %w", err)
+	}
 	return out, nil
+}
+
+func (r *AppointmentRepository) insertAudit(ctx context.Context, executor auditExecutor, tenantID, actorUserID uuid.UUID, action string, appointmentID uuid.UUID) error {
+	if !r.transactionalAudit {
+		return nil
+	}
+	return insertAuditEvent(ctx, executor, tenantID, actorUserID, action, "appointment", appointmentID, nil)
 }
 
 func (r *AppointmentRepository) ExistsOverlap(ctx context.Context, tenantID uuid.UUID, startsAt, endsAt time.Time, excludeID *uuid.UUID) (bool, error) {
@@ -141,7 +178,7 @@ func (r *AppointmentRepository) ExistsOverlap(ctx context.Context, tenantID uuid
 func (r *AppointmentRepository) ClientExists(ctx context.Context, tenantID, clientID uuid.UUID) (bool, error) {
 	const query = `
 		SELECT EXISTS(
-			SELECT 1 FROM clients WHERE tenant_id = $1 AND id = $2
+			SELECT 1 FROM clients WHERE tenant_id = $1 AND id = $2 AND archived_at IS NULL
 		)
 	`
 

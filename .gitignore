@@ -1,3 +1,13 @@
 PROGRESS/
 apps/api/server
 apps/api/server.exe
+apps/api/*.exe
+apps/api/*.test
+node_modules/
+.pnpm-store/
+.tmp/
+.local/
+.env
+apps/web/.env
+apps/web/.env.local
+apps/api/.env

@@ -8,6 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/trace"
+
+	"sessionflow/apps/api/internal/requestcontext"
 )
 
 const requestIDHeader = "X-Request-ID"
@@ -24,6 +26,7 @@ func RequestLogging(logger *slog.Logger) echo.MiddlewareFunc {
 				requestID = uuid.NewString()
 			}
 			c.Response().Header().Set(requestIDHeader, requestID)
+			c.SetRequest(c.Request().WithContext(requestcontext.WithRequestID(c.Request().Context(), requestID)))
 
 			start := time.Now()
 			err := next(c)

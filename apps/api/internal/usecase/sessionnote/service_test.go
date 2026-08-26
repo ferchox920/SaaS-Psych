@@ -18,6 +18,7 @@ type fakeRepository struct {
 
 type fakeAuditor struct {
 	actions []string
+	err     error
 }
 
 func (f *fakeAuditor) RecordDomainEvent(
@@ -30,7 +31,7 @@ func (f *fakeAuditor) RecordDomainEvent(
 	_ map[string]any,
 ) error {
 	f.actions = append(f.actions, action)
-	return nil
+	return f.err
 }
 
 func (f fakeRepository) Create(_ context.Context, in domainsessionnote.Entity) (domainsessionnote.Entity, error) {
@@ -151,7 +152,7 @@ func TestUpdateForbiddenForOtherMember(t *testing.T) {
 		ActorUserID: uuid.New(),
 		ActorRole:   "member",
 		Body:        "updated",
-		IsPrivate:   false,
+		IsPrivate:   boolPointer(false),
 	})
 	if !errors.Is(err, domainerrors.ErrForbidden) {
 		t.Fatalf("expected forbidden, got %v", err)
@@ -168,14 +169,16 @@ func TestUpdateRecordsDomainAuditAndPreservesImmutableFields(t *testing.T) {
 	updateNow := createdAt.Add(2 * time.Hour)
 
 	svc := NewService(fakeRepository{notes: []domainsessionnote.Entity{{
-		ID:            noteID,
-		TenantID:      tenantID,
-		AppointmentID: appointmentID,
-		AuthorUserID:  authorID,
-		Body:          "before",
-		IsPrivate:     true,
-		CreatedAt:     createdAt,
-		UpdatedAt:     createdAt,
+		ID:             noteID,
+		TenantID:       tenantID,
+		AppointmentID:  appointmentID,
+		AuthorUserID:   authorID,
+		Body:           "before",
+		IsPrivate:      true,
+		Status:         "draft",
+		CurrentVersion: 1,
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
 	}}}, auditor)
 	svc.now = func() time.Time { return updateNow }
 
@@ -185,7 +188,7 @@ func TestUpdateRecordsDomainAuditAndPreservesImmutableFields(t *testing.T) {
 		ActorUserID: authorID,
 		ActorRole:   "member",
 		Body:        "after",
-		IsPrivate:   false,
+		IsPrivate:   boolPointer(false),
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -204,5 +207,23 @@ func TestUpdateRecordsDomainAuditAndPreservesImmutableFields(t *testing.T) {
 	}
 	if len(auditor.actions) != 1 || auditor.actions[0] != "session_note.update" {
 		t.Fatalf("expected session_note.update action, got %v", auditor.actions)
+	}
+}
+
+func boolPointer(value bool) *bool {
+	return &value
+}
+
+func TestReadFailsClosedWhenAuditCannotBeRecorded(t *testing.T) {
+	tenantID, authorID, noteID, appointmentID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	auditFailure := errors.New("audit unavailable")
+	svc := NewService(fakeRepository{notes: []domainsessionnote.Entity{{
+		ID: noteID, TenantID: tenantID, AppointmentID: appointmentID, AuthorUserID: authorID,
+		Body: "private", IsPrivate: true, Status: "draft", CurrentVersion: 1,
+	}}}, &fakeAuditor{err: auditFailure})
+
+	_, err := svc.Get(context.Background(), tenantID, noteID, Viewer{UserID: authorID, Role: "member"})
+	if !errors.Is(err, auditFailure) {
+		t.Fatalf("expected read to fail closed on audit error, got %v", err)
 	}
 }

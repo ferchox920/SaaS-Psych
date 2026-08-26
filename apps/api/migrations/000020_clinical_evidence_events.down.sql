@@ -1,0 +1,14 @@
+DROP TRIGGER IF EXISTS clinical_event_evidence_preserve_requirement ON clinical_event_evidence;
+DROP TRIGGER IF EXISTS clinical_events_require_evidence ON clinical_events;
+DROP FUNCTION IF EXISTS ensure_approved_event_has_evidence();
+DROP TABLE IF EXISTS clinical_event_evidence;
+DROP TRIGGER IF EXISTS clinical_events_no_delete ON clinical_events;
+DROP TABLE IF EXISTS clinical_events;
+DROP TRIGGER IF EXISTS clinical_evidence_no_delete ON clinical_evidence;
+DROP TRIGGER IF EXISTS clinical_evidence_immutable_provenance ON clinical_evidence;
+DROP FUNCTION IF EXISTS prevent_clinical_evidence_provenance_update();
+DROP TRIGGER IF EXISTS clinical_evidence_validate_source ON clinical_evidence;
+DROP FUNCTION IF EXISTS validate_clinical_evidence_source();
+DROP TABLE IF EXISTS clinical_evidence;
+DROP FUNCTION IF EXISTS prevent_clinical_longitudinal_delete();
+DROP INDEX IF EXISTS clinical_ai_runs_tenant_id_client_unique;

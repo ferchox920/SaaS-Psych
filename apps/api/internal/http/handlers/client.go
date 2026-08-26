@@ -27,14 +27,21 @@ type upsertClientRequest struct {
 	NotesPublic string `json:"notes_public"`
 }
 
+type archiveClientRequest struct {
+	Reason string `json:"reason"`
+}
+
 type clientResponse struct {
-	ID          string `json:"id"`
-	TenantID    string `json:"tenant_id"`
-	FullName    string `json:"fullname"`
-	Contact     string `json:"contact"`
-	NotesPublic string `json:"notes_public"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID               string  `json:"id"`
+	TenantID         string  `json:"tenant_id"`
+	FullName         string  `json:"fullname"`
+	Contact          string  `json:"contact"`
+	NotesPublic      string  `json:"notes_public"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
+	ArchivedAt       *string `json:"archived_at,omitempty"`
+	ArchivedByUserID *string `json:"archived_by_user_id,omitempty"`
+	ArchiveReason    string  `json:"archive_reason,omitempty"`
 }
 
 func (h *ClientHandler) Create(c echo.Context) error {
@@ -79,8 +86,12 @@ func (h *ClientHandler) List(c echo.Context) error {
 	if !ok {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
+	principal, ok := httpmiddleware.PrincipalFromContext(c.Request().Context())
+	if !ok {
+		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "auth context missing")
+	}
 
-	items, err := h.service.List(c.Request().Context(), tenantID)
+	items, err := h.service.List(c.Request().Context(), tenantID, principal.UserID)
 	if err != nil {
 		return h.handleClientError(c, err)
 	}
@@ -93,6 +104,25 @@ func (h *ClientHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"items": response})
 }
 
+func (h *ClientHandler) ListArchived(c echo.Context) error {
+	if h.service == nil {
+		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "client service unavailable")
+	}
+	tenantID, principal, err := tenantAndPrincipal(c)
+	if err != nil {
+		return err
+	}
+	items, err := h.service.ListArchived(c.Request().Context(), tenantID, principal.UserID)
+	if err != nil {
+		return h.handleClientError(c, err)
+	}
+	response := make([]clientResponse, 0, len(items))
+	for _, item := range items {
+		response = append(response, toClientResponse(item))
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": response})
+}
+
 func (h *ClientHandler) Get(c echo.Context) error {
 	if h.service == nil {
 		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "client service unavailable")
@@ -102,13 +132,17 @@ func (h *ClientHandler) Get(c echo.Context) error {
 	if !ok {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
+	principal, ok := httpmiddleware.PrincipalFromContext(c.Request().Context())
+	if !ok {
+		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "auth context missing")
+	}
 
 	clientID, err := parseClientID(c.Param("id"))
 	if err != nil {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", err.Error(), map[string]any{"field": "id"})
 	}
 
-	out, err := h.service.Get(c.Request().Context(), tenantID, clientID)
+	out, err := h.service.Get(c.Request().Context(), tenantID, clientID, principal.UserID)
 	if err != nil {
 		return h.handleClientError(c, err)
 	}
@@ -174,10 +208,50 @@ func (h *ClientHandler) Delete(c echo.Context) error {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", err.Error(), map[string]any{"field": "id"})
 	}
 
-	if err := h.service.Delete(c.Request().Context(), tenantID, clientID, principal.UserID); err != nil {
+	if err := h.service.Archive(c.Request().Context(), tenantID, clientID, principal.UserID, "archived from client endpoint"); err != nil {
 		return h.handleClientError(c, err)
 	}
 
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *ClientHandler) Archive(c echo.Context) error {
+	if h.service == nil {
+		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "client service unavailable")
+	}
+	tenantID, principal, err := tenantAndPrincipal(c)
+	if err != nil {
+		return err
+	}
+	clientID, err := parseClientID(c.Param("id"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", err.Error(), map[string]any{"field": "id"})
+	}
+	var req archiveClientRequest
+	if err := c.Bind(&req); err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid request body")
+	}
+	if err := h.service.Archive(c.Request().Context(), tenantID, clientID, principal.UserID, req.Reason); err != nil {
+		return h.handleClientError(c, err)
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *ClientHandler) Restore(c echo.Context) error {
+	if h.service == nil {
+		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "client service unavailable")
+	}
+	tenantID, principal, err := tenantAndPrincipal(c)
+	if err != nil {
+		return err
+	}
+	clientID, err := parseClientID(c.Param("id"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", err.Error(), map[string]any{"field": "id"})
+	}
+	if err := h.service.Restore(c.Request().Context(), tenantID, clientID, principal.UserID); err != nil {
+		return h.handleClientError(c, err)
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -207,6 +281,12 @@ func defaultClientErrorMappings() []domainErrorMapping {
 			Code:   "validation_error",
 		},
 		{
+			Target:  domainerrors.ErrForbidden,
+			Status:  http.StatusForbidden,
+			Code:    "forbidden",
+			Message: "clinical assignment required",
+		},
+		{
 			Target:  domainerrors.ErrNotFound,
 			Status:  http.StatusNotFound,
 			Code:    "not_found",
@@ -216,13 +296,25 @@ func defaultClientErrorMappings() []domainErrorMapping {
 }
 
 func toClientResponse(entity domainclient.Entity) clientResponse {
+	var archivedAt, archivedBy *string
+	if entity.ArchivedAt != nil {
+		value := entity.ArchivedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
+		archivedAt = &value
+	}
+	if entity.ArchivedByUserID != nil {
+		value := entity.ArchivedByUserID.String()
+		archivedBy = &value
+	}
 	return clientResponse{
-		ID:          entity.ID.String(),
-		TenantID:    entity.TenantID.String(),
-		FullName:    entity.FullName,
-		Contact:     entity.Contact,
-		NotesPublic: entity.NotesPublic,
-		CreatedAt:   entity.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:   entity.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		ID:               entity.ID.String(),
+		TenantID:         entity.TenantID.String(),
+		FullName:         entity.FullName,
+		Contact:          entity.Contact,
+		NotesPublic:      entity.NotesPublic,
+		CreatedAt:        entity.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:        entity.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		ArchivedAt:       archivedAt,
+		ArchivedByUserID: archivedBy,
+		ArchiveReason:    entity.ArchiveReason,
 	}
 }

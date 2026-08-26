@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -11,11 +12,23 @@ import (
 )
 
 type AuthHandler struct {
-	service *authusecase.Service
+	service      *authusecase.Service
+	cookieConfig AuthCookieConfig
 }
 
-func NewAuthHandler(service *authusecase.Service) *AuthHandler {
-	return &AuthHandler{service: service}
+type AuthCookieConfig struct {
+	Secure   bool
+	SameSite http.SameSite
+	Domain   string
+	MaxAge   time.Duration
+}
+
+func NewAuthHandler(service *authusecase.Service, configs ...AuthCookieConfig) *AuthHandler {
+	config := AuthCookieConfig{SameSite: http.SameSiteLaxMode, MaxAge: 30 * 24 * time.Hour}
+	if len(configs) > 0 {
+		config = configs[0]
+	}
+	return &AuthHandler{service: service, cookieConfig: config}
 }
 
 type loginRequest struct {
@@ -23,12 +36,10 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-type logoutRequest struct {
-	RefreshToken string `json:"refresh_token"`
+type authTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
 }
 
 type meResponse struct {
@@ -62,7 +73,8 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return h.handleAuthError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, out)
+	h.setRefreshCookie(c, out.RefreshToken)
+	return c.JSON(http.StatusOK, toAuthTokenResponse(out))
 }
 
 func (h *AuthHandler) Refresh(c echo.Context) error {
@@ -70,12 +82,9 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "auth service unavailable")
 	}
 
-	var req refreshRequest
-	if err := c.Bind(&req); err != nil {
-		return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid request body", map[string]any{"field": "body"})
-	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		return writeAPIError(c, http.StatusBadRequest, "validation_error", "refresh_token is required", map[string]any{"field": "refresh_token"})
+	refreshToken, err := h.refreshTokenFromCookie(c)
+	if err != nil {
+		return err
 	}
 
 	tenantID, ok := httpmiddleware.TenantIDFromContext(c.Request().Context())
@@ -83,12 +92,13 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
 
-	out, err := h.service.Refresh(c.Request().Context(), tenantID, req.RefreshToken)
+	out, err := h.service.Refresh(c.Request().Context(), tenantID, refreshToken)
 	if err != nil {
 		return h.handleAuthError(c, err)
 	}
 
-	return c.JSON(http.StatusOK, out)
+	h.setRefreshCookie(c, out.RefreshToken)
+	return c.JSON(http.StatusOK, toAuthTokenResponse(out))
 }
 
 func (h *AuthHandler) Logout(c echo.Context) error {
@@ -96,12 +106,9 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "auth service unavailable")
 	}
 
-	var req logoutRequest
-	if err := c.Bind(&req); err != nil {
-		return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid request body", map[string]any{"field": "body"})
-	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		return writeAPIError(c, http.StatusBadRequest, "validation_error", "refresh_token is required", map[string]any{"field": "refresh_token"})
+	refreshToken, err := h.refreshTokenFromCookie(c)
+	if err != nil {
+		return err
 	}
 
 	tenantID, ok := httpmiddleware.TenantIDFromContext(c.Request().Context())
@@ -109,11 +116,43 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
 
-	if err := h.service.Logout(c.Request().Context(), tenantID, req.RefreshToken); err != nil {
+	if err := h.service.Logout(c.Request().Context(), tenantID, refreshToken); err != nil {
 		return h.handleAuthError(c, err)
 	}
 
+	h.clearRefreshCookie(c)
 	return c.NoContent(http.StatusNoContent)
+}
+
+const refreshCookieName = "sessionflow_refresh"
+
+func (h *AuthHandler) refreshTokenFromCookie(c echo.Context) (string, error) {
+	cookie, err := c.Cookie(refreshCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", writeAPIError(c, http.StatusUnauthorized, "unauthorized", "refresh cookie is required")
+	}
+	return cookie.Value, nil
+}
+
+func (h *AuthHandler) setRefreshCookie(c echo.Context, token string) {
+	maxAge := int(h.cookieConfig.MaxAge.Seconds())
+	c.SetCookie(&http.Cookie{
+		Name: refreshCookieName, Value: token, Path: "/api/v1/auth",
+		Domain: h.cookieConfig.Domain, MaxAge: maxAge,
+		HttpOnly: true, Secure: h.cookieConfig.Secure, SameSite: h.cookieConfig.SameSite,
+	})
+}
+
+func (h *AuthHandler) clearRefreshCookie(c echo.Context) {
+	c.SetCookie(&http.Cookie{
+		Name: refreshCookieName, Value: "", Path: "/api/v1/auth",
+		Domain: h.cookieConfig.Domain, MaxAge: -1, Expires: time.Unix(1, 0),
+		HttpOnly: true, Secure: h.cookieConfig.Secure, SameSite: h.cookieConfig.SameSite,
+	})
+}
+
+func toAuthTokenResponse(out authusecase.LoginOutput) authTokenResponse {
+	return authTokenResponse{AccessToken: out.AccessToken, TokenType: out.TokenType, ExpiresIn: out.ExpiresIn}
 }
 
 func (h *AuthHandler) Me(c echo.Context) error {

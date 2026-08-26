@@ -18,8 +18,8 @@ func TestCanViewPrivateNote(t *testing.T) {
 	if !CanView(note, authorID, "member") {
 		t.Fatalf("author should view private note")
 	}
-	if !CanView(note, uuid.New(), "owner") {
-		t.Fatalf("owner should view private note")
+	if CanView(note, uuid.New(), "owner") {
+		t.Fatalf("administrative role alone must not grant access to a private note")
 	}
 	if CanView(note, uuid.New(), "member") {
 		t.Fatalf("member should not view other private note")

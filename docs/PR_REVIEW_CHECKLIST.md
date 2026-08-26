@@ -9,6 +9,7 @@ Checklist de revision para cambios funcionales en la API, con enfasis en aislami
 - [ ] Los `JOIN`, `UPDATE` y `DELETE` preservan el aislamiento por tenant.
 - [ ] Si el handler recibe `tenant_id` desde contexto, el usecase/repository lo propaga sin reconstruirlo desde input inseguro.
 - [ ] Los tests cubren al menos un escenario cross-tenant cuando se agrega o cambia persistencia.
+- [ ] Si aparece una consulta global legitima, la excepcion al guard automatizado queda documentada en `tenant_aware_query_guard_test.go`.
 
 ## Guia rapida para queries nuevas
 

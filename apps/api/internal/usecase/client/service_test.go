@@ -13,15 +13,18 @@ import (
 )
 
 type fakeRepository struct {
-	createFn func(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error)
-	getFn    func(ctx context.Context, tenantID, clientID uuid.UUID) (domainclient.Entity, error)
-	updateFn func(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error)
-	listFn   func(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error)
-	deleteFn func(ctx context.Context, tenantID, clientID uuid.UUID) error
+	createFn       func(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error)
+	getFn          func(ctx context.Context, tenantID, clientID uuid.UUID) (domainclient.Entity, error)
+	updateFn       func(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error)
+	listFn         func(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error)
+	listArchivedFn func(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error)
+	archiveFn      func(ctx context.Context, tenantID, clientID, actorUserID uuid.UUID, reason string, archivedAt time.Time) error
+	restoreFn      func(ctx context.Context, tenantID, clientID, actorUserID uuid.UUID, restoredAt time.Time) error
 }
 
 type fakeAuditor struct {
 	actions []string
+	err     error
 }
 
 func (f *fakeAuditor) RecordDomainEvent(
@@ -34,10 +37,10 @@ func (f *fakeAuditor) RecordDomainEvent(
 	_ map[string]any,
 ) error {
 	f.actions = append(f.actions, action)
-	return nil
+	return f.err
 }
 
-func (f fakeRepository) Create(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error) {
+func (f fakeRepository) Create(ctx context.Context, in domainclient.Entity, _ uuid.UUID) (domainclient.Entity, error) {
 	return f.createFn(ctx, in)
 }
 
@@ -48,19 +51,33 @@ func (f fakeRepository) List(ctx context.Context, tenantID uuid.UUID) ([]domainc
 	return f.listFn(ctx, tenantID)
 }
 
+func (f fakeRepository) ListArchived(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error) {
+	if f.listArchivedFn == nil {
+		return nil, nil
+	}
+	return f.listArchivedFn(ctx, tenantID)
+}
+
 func (f fakeRepository) GetByID(ctx context.Context, tenantID, clientID uuid.UUID) (domainclient.Entity, error) {
 	return f.getFn(ctx, tenantID, clientID)
 }
 
-func (f fakeRepository) Update(ctx context.Context, in domainclient.Entity) (domainclient.Entity, error) {
+func (f fakeRepository) Update(ctx context.Context, in domainclient.Entity, _ uuid.UUID) (domainclient.Entity, error) {
 	return f.updateFn(ctx, in)
 }
 
-func (f fakeRepository) Delete(ctx context.Context, tenantID, clientID uuid.UUID) error {
-	if f.deleteFn == nil {
+func (f fakeRepository) Archive(ctx context.Context, tenantID, clientID, actorUserID uuid.UUID, reason string, archivedAt time.Time) error {
+	if f.archiveFn == nil {
 		return nil
 	}
-	return f.deleteFn(ctx, tenantID, clientID)
+	return f.archiveFn(ctx, tenantID, clientID, actorUserID, reason, archivedAt)
+}
+
+func (f fakeRepository) Restore(ctx context.Context, tenantID, clientID, actorUserID uuid.UUID, restoredAt time.Time) error {
+	if f.restoreFn == nil {
+		return nil
+	}
+	return f.restoreFn(ctx, tenantID, clientID, actorUserID, restoredAt)
 }
 
 func TestCreateRequiresValidInput(t *testing.T) {
@@ -71,6 +88,18 @@ func TestCreateRequiresValidInput(t *testing.T) {
 	_, err := svc.Create(context.Background(), CreateInput{TenantID: uuid.Nil, FullName: ""})
 	if !errors.Is(err, domainerrors.ErrValidation) {
 		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestClientReadFailsClosedWhenAuditUnavailable(t *testing.T) {
+	tenantID, clientID, viewerID := uuid.New(), uuid.New(), uuid.New()
+	auditFailure := errors.New("audit unavailable")
+	svc := NewService(fakeRepository{getFn: func(_ context.Context, _, _ uuid.UUID) (domainclient.Entity, error) {
+		return domainclient.Entity{ID: clientID, TenantID: tenantID}, nil
+	}}, &fakeAuditor{err: auditFailure})
+	_, err := svc.Get(context.Background(), tenantID, clientID, viewerID)
+	if !errors.Is(err, auditFailure) {
+		t.Fatalf("expected client read to fail closed, got %v", err)
 	}
 }
 
@@ -146,7 +175,7 @@ func TestClientActionsRecordDomainAudit(t *testing.T) {
 		updateFn: func(_ context.Context, in domainclient.Entity) (domainclient.Entity, error) {
 			return in, nil
 		},
-		deleteFn: func(_ context.Context, _, _ uuid.UUID) error {
+		archiveFn: func(_ context.Context, _, _, _ uuid.UUID, _ string, _ time.Time) error {
 			return nil
 		},
 	}
@@ -158,14 +187,14 @@ func TestClientActionsRecordDomainAudit(t *testing.T) {
 	if _, err := svc.Update(context.Background(), UpdateInput{TenantID: tenantID, ActorUserID: actorID, ClientID: clientID, FullName: "Client 1 updated"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if err := svc.Delete(context.Background(), tenantID, clientID, actorID); err != nil {
-		t.Fatalf("delete: %v", err)
+	if err := svc.Archive(context.Background(), tenantID, clientID, actorID, "completed care"); err != nil {
+		t.Fatalf("archive: %v", err)
 	}
 
 	if len(auditor.actions) != 3 {
 		t.Fatalf("expected 3 audit actions, got %d (%v)", len(auditor.actions), auditor.actions)
 	}
-	want := []string{"client.create", "client.update", "client.delete"}
+	want := []string{"client.create", "client.update", "client.archive"}
 	for i, action := range want {
 		if auditor.actions[i] != action {
 			t.Fatalf("expected action[%d]=%q, got %q", i, action, auditor.actions[i])

@@ -70,7 +70,7 @@ func TestSessionNoteRepositoryTenantIsolationPostgresIntegration(t *testing.T) {
 		appointmentB, tenantB, clientB, startB, startB.Add(time.Hour),
 	)
 
-	repo := NewSessionNoteRepository(pool)
+	repo := NewSessionNoteRepository(pool).WithTransactionalAudit()
 
 	noteA, err := repo.Create(ctx, domainsessionnote.Entity{
 		ID:            uuid.New(),
@@ -136,14 +136,16 @@ func TestSessionNoteRepositoryTenantIsolationPostgresIntegration(t *testing.T) {
 	}
 
 	_, err = repo.Update(ctx, domainsessionnote.Entity{
-		ID:            noteA.ID,
-		TenantID:      tenantB,
-		AppointmentID: noteA.AppointmentID,
-		AuthorUserID:  noteA.AuthorUserID,
-		Body:          "cross-tenant-update",
-		IsPrivate:     false,
-		CreatedAt:     noteA.CreatedAt,
-		UpdatedAt:     time.Now().UTC(),
+		ID:             noteA.ID,
+		TenantID:       tenantB,
+		AppointmentID:  noteA.AppointmentID,
+		AuthorUserID:   noteA.AuthorUserID,
+		Body:           "cross-tenant-update",
+		IsPrivate:      false,
+		Status:         noteA.Status,
+		CurrentVersion: noteA.CurrentVersion,
+		CreatedAt:      noteA.CreatedAt,
+		UpdatedAt:      time.Now().UTC(),
 	})
 	if !errors.Is(err, domainerrors.ErrNotFound) {
 		t.Fatalf("expected cross-tenant update to return ErrNotFound, got %v", err)
@@ -155,6 +157,63 @@ func TestSessionNoteRepositoryTenantIsolationPostgresIntegration(t *testing.T) {
 	}
 	if stored.Body != noteA.Body || stored.IsPrivate != noteA.IsPrivate {
 		t.Fatalf("cross-tenant update should not mutate note, got %+v", stored)
+	}
+
+	stored.Body = "tenant-a-draft-version-two"
+	stored.UpdatedAt = time.Now().UTC()
+	updated, err := repo.Update(ctx, stored)
+	if err != nil {
+		t.Fatalf("update same-tenant draft: %v", err)
+	}
+	if updated.CurrentVersion != 2 {
+		t.Fatalf("expected draft version 2, got %d", updated.CurrentVersion)
+	}
+
+	signedAt := time.Now().UTC().Add(time.Second)
+	signed, err := repo.Sign(ctx, tenantA, noteA.ID, updated.CurrentVersion, signedAt)
+	if err != nil {
+		t.Fatalf("sign note: %v", err)
+	}
+	if signed.Status != "signed" || signed.SignedAt == nil {
+		t.Fatalf("expected signed lifecycle state, got %+v", signed)
+	}
+
+	signed.Body = "forbidden overwrite"
+	signed.UpdatedAt = signedAt.Add(time.Second)
+	if _, err := repo.Update(ctx, signed); !errors.Is(err, domainerrors.ErrConflict) {
+		t.Fatalf("expected signed overwrite conflict, got %v", err)
+	}
+
+	signed.Body = "signed content with documented clarification"
+	signed.UpdatedAt = signedAt.Add(2 * time.Second)
+	withAddendum, err := repo.Addendum(ctx, signed, userA, "documented clarification")
+	if err != nil {
+		t.Fatalf("add addendum: %v", err)
+	}
+	if withAddendum.CurrentVersion != 3 || withAddendum.Status != "signed" {
+		t.Fatalf("unexpected addendum lifecycle state: %+v", withAddendum)
+	}
+	versions, err := repo.ListVersions(ctx, tenantA, noteA.ID)
+	if err != nil {
+		t.Fatalf("list versions: %v", err)
+	}
+	if len(versions) != 3 || versions[0].Body != "tenant-a-note" || versions[2].ChangeKind != "addendum" || versions[2].ChangeReason != "documented clarification" {
+		t.Fatalf("unexpected immutable version history: %+v", versions)
+	}
+	var writeAuditCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM audit_logs
+		WHERE tenant_id = $1 AND entity_id = $2
+		  AND action IN ('session_note.create', 'session_note.update', 'session_note.sign', 'session_note.addendum')
+	`, tenantA, noteA.ID).Scan(&writeAuditCount); err != nil {
+		t.Fatalf("count transactional write audits: %v", err)
+	}
+	if writeAuditCount != 4 {
+		t.Fatalf("expected one transactional audit per clinical write, got %d", writeAuditCount)
+	}
+
+	if _, err := pool.Exec(ctx, `DELETE FROM clients WHERE tenant_id = $1 AND id = $2`, tenantA, clientA); err == nil {
+		t.Fatal("expected physical deletion of a client with clinical history to be blocked")
 	}
 }
 

@@ -20,6 +20,8 @@ Progreso historico: [PROGRESS/PROGRESS_INDEX.md](./PROGRESS/PROGRESS_INDEX.md)
 ## Requisitos
 
 - Go `1.24+`
+- Node `22+`
+- Corepack (`pnpm` se usa via `corepack pnpm`)
 - Docker + Docker Compose
 - `make`
 
@@ -43,12 +45,43 @@ make db-reset-local
 make migrate-up
 ```
 
+Si `docker compose up -d postgres redis` falla por nombres de contenedores ya existentes (`sessionflow-postgres`, `sessionflow-redis`) o por puertos ocupados por contenedores legacy, limpialos primero:
+
+```powershell
+docker ps -a --filter "name=sessionflow-postgres" --filter "name=sessionflow-redis"
+docker rm -f sessionflow-postgres sessionflow-redis
+docker compose up -d postgres redis
+```
+
 Luego correr API:
 
 ```bash
 cd apps/api
 go run ./cmd/server
 ```
+
+Luego correr frontend web:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+corepack pnpm install
+corepack pnpm --filter web dev
+```
+
+Frontend web:
+
+- App Next.js en `apps/web`
+- URL local: `http://localhost:3000`
+- API esperada: `http://localhost:8080/api/v1`
+- Login demo owner: tenant `11111111-1111-1111-1111-111111111111`, usuario `owner@tenant-a.local`, password `ChangeMe123!`
+
+Arquitectura frontend inicial:
+
+- `src/app`: App Router, layouts y paginas.
+- `src/features`: slices por feature (`auth`, `dashboard`, `clients`, `appointments`, `session-notes`, `audit`).
+- `src/components`: shell compartido y base shadcn/ui.
+- `src/lib`: config, cliente HTTP y utilidades.
+- `src/providers`: auth y TanStack Query.
 
 ## Troubleshooting local
 
@@ -59,6 +92,8 @@ Síntomas típicos:
 - `make db-up` levanta `postgres`, pero `make migrate-up` falla con autenticación.
 - `make integration-preflight` detecta credenciales incompatibles para `sessionflow/sessionflow`.
 - El contenedor usa un volumen legacy de una versión anterior del stack.
+- `docker compose up -d postgres redis` falla porque otro contenedor legacy ya ocupa `5432` o `6379`.
+- `make integration-preflight` falla aunque el volumen sea correcto, porque hay contenedores huérfanos o externos publicando los mismos puertos.
 
 Recuperación recomendada para entorno local:
 
@@ -69,6 +104,37 @@ make integration-preflight
 ```
 
 `make db-reset-local` borra el volumen local de Postgres y reconstruye `postgres` + `redis`. Es un comando destructivo y solo aplica a desarrollo local.
+
+Si el problema no es el volumen sino un conflicto por contenedores legacy, inspeccionar primero qué proceso ocupa los puertos:
+
+```bash
+docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker compose down --remove-orphans
+```
+
+Si aparece un contenedor ajeno al stack actual, detenerlo o removerlo antes de repetir `make integration-preflight`.
+
+### Windows PowerShell (sin `make`)
+
+En este host Windows `make` puede no estar instalado. El flujo equivalente es:
+
+```powershell
+# 1) Limpiar contenedores legacy si existen
+docker rm -f sessionflow-postgres sessionflow-redis
+
+# 2) Reset destructivo de la DB local
+docker compose down --remove-orphans
+docker volume rm -f sessionflow_postgres_data
+docker compose up -d postgres redis
+
+# 3) Preflight manual
+docker compose exec -T postgres pg_isready -U sessionflow -d sessionflow
+docker compose exec -T postgres sh -lc "PGPASSWORD=sessionflow psql -U sessionflow -d sessionflow -c 'select 1' >/dev/null"
+docker compose exec -T redis redis-cli ping
+
+# 4) Migraciones
+migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up
+```
 
 Si queres setup paso a paso:
 
@@ -114,6 +180,8 @@ Hardening baseline:
 - El servidor falla en startup si `APP_ENV` no es `local` y `JWT_ACCESS_SECRET` sigue en `change-me`.
 - Usar un secreto unico y largo por entorno, inyectado desde el runtime o secret manager, no commiteado en el repo.
 - Mantener `APP_ENV` alineado con el entorno real (`local`, `dev`, `staging`, `production`) para que las validaciones de arranque apliquen correctamente.
+- En entornos expuestos, tratar `DATABASE_URL` y `REDIS_URL` faltantes como configuracion invalida operativamente: auth/persistencia o rate limit quedan degradados.
+- Mantener `OTEL_DB_STATEMENT_ENABLED=false` salvo debugging temporal controlado, para evitar exponer SQL sensible en trazas.
 
 Guia de referencia: [docs/ENV_HARDENING_BASELINE.md](./docs/ENV_HARDENING_BASELINE.md)
 
@@ -139,12 +207,17 @@ make db-up
 make db-down
 make db-reset-local
 make integration-preflight
+make integration-recover-local
 docker compose ps
 docker compose logs -f postgres
 docker compose logs -f redis
 ```
 
 `make db-reset-local` elimina el volumen local `sessionflow_postgres_data` y vuelve a levantar `postgres` + `redis`. Es un reset destructivo de la DB local y se debe usar solo cuando el volumen persistente quedo incompatible o queres reconstruir el entorno desde cero.
+
+`make integration-preflight` ahora tambien falla temprano si detecta contenedores legacy usando `5432` o `6379`, antes de ejecutar migraciones o tests.
+
+`make integration-recover-local` automatiza la recuperacion local: resetea el stack de datos, ejecuta `integration-preflight` y reaplica migraciones.
 
 Stack observabilidad local (metrics + dashboards):
 
@@ -162,6 +235,7 @@ make tools
 make db-up
 make db-reset-local
 make integration-preflight
+make integration-recover-local
 make migrate-up
 make migrate-down
 make migrate-down-1
@@ -173,6 +247,8 @@ Caso operativo conocido:
 - Si Postgres arranca pero rechaza autenticacion para `sessionflow/sessionflow`, el volumen persistente local suele venir de una corrida anterior con otras credenciales.
 - El flujo recomendado en ese caso es `make db-reset-local` y luego `make migrate-up`.
 - Si tenias un volumen legacy de Compose creado antes del nombre estable `sessionflow`, puede quedar huerfano en Docker; ya no lo usa el stack actual, pero podes removerlo manualmente si queres limpiar el host.
+- Si `docker compose up` falla porque `sessionflow-postgres` o `sessionflow-redis` ya existen, remover esos contenedores legacy antes de volver a levantar el stack.
+- Si `docker compose` no puede publicar `5432` o `6379`, revisar primero contenedores legacy con `docker ps --filter publish=5432 --filter publish=6379`.
 
 Con DB explicita:
 
@@ -183,7 +259,7 @@ make migrate-up DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/
 Compatibilidad de `make tools`:
 
 - Linux/macOS: instala/verifica `migrate` automaticamente (`scripts/install_migrate.sh`).
-- Windows: usar instalacion manual (por ejemplo `choco install golang-migrate` o `scoop install migrate`) y luego ejecutar `make migrate-up`.
+- Windows: usar instalacion manual (por ejemplo `choco install golang-migrate` o `scoop install migrate`) y luego ejecutar `migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up` o los equivalentes manuales del bloque PowerShell anterior.
 
 Seed demo:
 
@@ -283,9 +359,20 @@ Integration DB (Postgres real, opt-in):
 ```bash
 make integration-preflight
 make test-integration-db DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+make test-integration-db-reset DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
 ```
 
-`make integration-preflight` valida antes del test que el contenedor `postgres` responde con las credenciales esperadas (`sessionflow/sessionflow`) y que `redis` responde `PONG`. Si falla por drift del volumen local, el flujo de recuperacion recomendado es:
+`make test-integration-db` usa el mismo alcance que CI: `go test -count=1 ./internal/http ./internal/infra/db`.
+
+`make integration-preflight` valida antes del test que el contenedor `postgres` responde con las credenciales esperadas (`sessionflow/sessionflow`), que `redis` responde `PONG` y que no hay contenedores legacy ocupando `5432` o `6379`.
+
+Si queres reconstruir el entorno local y volver a correr la integracion real en un solo flujo, usa:
+
+```bash
+make test-integration-db-reset
+```
+
+Si preferis la recuperacion paso a paso, el flujo recomendado sigue siendo:
 
 ```bash
 make db-reset-local
@@ -294,11 +381,37 @@ make integration-preflight
 make test-integration-db
 ```
 
+Si falla por conflicto de contenedores/puertos y no por credenciales, revisar:
+
+```bash
+docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker compose down --remove-orphans
+```
+
+Si el conflicto es por nombres legacy ya reservados, removerlos explicitamente:
+
+```powershell
+docker rm -f sessionflow-postgres sessionflow-redis
+```
+
 Equivalente manual:
 
 ```bash
 cd apps/api
 RUN_PG_INTEGRATION=1 DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" go test ./internal/http ./internal/infra/db
+```
+
+Equivalente manual en PowerShell, sin `make`:
+
+```powershell
+docker compose exec -T postgres pg_isready -U sessionflow -d sessionflow
+docker compose exec -T postgres sh -lc "PGPASSWORD=sessionflow psql -U sessionflow -d sessionflow -c 'select 1' >/dev/null"
+docker compose exec -T redis redis-cli ping
+migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up
+cd apps/api
+$env:RUN_PG_INTEGRATION="1"
+$env:DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+go test -count=1 ./internal/http ./internal/infra/db
 ```
 
 ## Endpoints principales
@@ -494,11 +607,27 @@ Trade-off `db.statement`:
 - `OTEL_DB_STATEMENT_ENABLED=false` (recomendado): menor riesgo de exponer datos sensibles y menor costo de serializacion.
 - `OTEL_DB_STATEMENT_ENABLED=true`: mejora debugging SQL pero puede aumentar cardinalidad/tamano de spans y riesgo de privacidad.
 
+## Supervisor clinico local
+
+SessionFlow incluye un bloc de microprocesos en `/clinical-workspace`, formulacion longitudinal aprobada en `/clinical-formulation` y revision posterior en `/clinical-review`. El texto clinico se procesa desde el backend contra Ollama en loopback; no existe fallback a APIs externas. La captura de audio esta apagada por defecto y el sidecar de faster-whisper debe iniciarse explicitamente.
+
+Configuracion minima local:
+
+```dotenv
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:9b
+CLINICAL_AUDIO_ENABLED=false
+CLINICAL_RISK_PROTOCOL=Define aqui el circuito operativo local de Fernando.
+```
+
+Consulta `docs/LOCAL_CLINICAL_AI.md`, `docs/LOCAL_TRANSCRIPTION.md` y `docs/CLINICAL_EVALUATION_REPORT.md` antes de habilitar material clinico.
+
 ## Portfolio
 
 Este proyecto demuestra:
 
 - Multi-tenant real: aislamiento por `tenant_id` en middleware, usecases y repositorios.
+- Guardrail automatico: test en `internal/infra/db` que detecta repositorios con acceso a DB sin referencia a `tenant_id`.
 - Auth robusta: access JWT + refresh token opaco hasheado con rotacion y revocacion.
 - RBAC en endpoints de negocio (`owner/admin/member`).
 - Rate limiting Redis en login (`/api/v1/auth/login`).
@@ -514,3 +643,7 @@ Este proyecto demuestra:
 - Checklist de revision PR: [docs/PR_REVIEW_CHECKLIST.md](./docs/PR_REVIEW_CHECKLIST.md)
 - Diseno de refresh token opaco: [docs/AUTH_REFRESH_TOKEN_DESIGN.md](./docs/AUTH_REFRESH_TOKEN_DESIGN.md)
 - Especificacion OpenAPI 3.0: [docs/openapi.yaml](./docs/openapi.yaml)
+- Operacion del supervisor local: [docs/LOCAL_CLINICAL_AI.md](./docs/LOCAL_CLINICAL_AI.md)
+- Transcripcion local efimera: [docs/LOCAL_TRANSCRIPTION.md](./docs/LOCAL_TRANSCRIPTION.md)
+- Sincronizacion con Google Calendar: [docs/GOOGLE_CALENDAR_SYNC.md](./docs/GOOGLE_CALENDAR_SYNC.md)
+- Evaluacion ficticia reproducible: [docs/CLINICAL_EVALUATION_REPORT.md](./docs/CLINICAL_EVALUATION_REPORT.md)

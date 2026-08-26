@@ -179,18 +179,21 @@ func TestAuthFlowIntegration(t *testing.T) {
 		RefreshToken string `json:"refresh_token"`
 	}{}
 
-	status, body := doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/login", tenantID, "", map[string]string{
+	status, body, refreshCookie := doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/login", tenantID, "", map[string]string{
 		"email":    email,
 		"password": password,
-	})
+	}, nil)
 	if status != stdhttp.StatusOK {
 		t.Fatalf("login expected status %d, got %d body=%s", stdhttp.StatusOK, status, string(body))
 	}
 	if err := json.Unmarshal(body, &loginResp); err != nil {
 		t.Fatalf("decode login response: %v", err)
 	}
-	if loginResp.AccessToken == "" || loginResp.RefreshToken == "" {
-		t.Fatalf("login must return access and refresh tokens")
+	if loginResp.AccessToken == "" || loginResp.RefreshToken != "" || refreshCookie == nil || !refreshCookie.HttpOnly {
+		t.Fatalf("login must return access token and set refresh only as HttpOnly cookie")
+	}
+	if refreshCookie.Path != "/api/v1/auth" || refreshCookie.SameSite != stdhttp.SameSiteLaxMode {
+		t.Fatalf("unexpected refresh cookie scope or SameSite: %+v", refreshCookie)
 	}
 
 	meResp := struct {
@@ -213,29 +216,28 @@ func TestAuthFlowIntegration(t *testing.T) {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	}{}
-	status, body = doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", map[string]string{
-		"refresh_token": loginResp.RefreshToken,
-	})
+	oldRefreshValue := refreshCookie.Value
+	status, body, refreshCookie = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", nil, refreshCookie)
 	if status != stdhttp.StatusOK {
 		t.Fatalf("refresh expected status %d, got %d body=%s", stdhttp.StatusOK, status, string(body))
 	}
 	if err := json.Unmarshal(body, &refreshResp); err != nil {
 		t.Fatalf("decode refresh response: %v", err)
 	}
-	if refreshResp.RefreshToken == "" || refreshResp.RefreshToken == loginResp.RefreshToken {
-		t.Fatalf("refresh should rotate refresh token")
+	if refreshResp.AccessToken == "" || refreshResp.RefreshToken != "" || refreshCookie == nil || refreshCookie.Value == oldRefreshValue {
+		t.Fatalf("refresh should rotate the HttpOnly cookie without exposing it in JSON")
 	}
 
-	status, body = doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", map[string]string{
-		"refresh_token": refreshResp.RefreshToken,
-	})
+	activeRefreshCookie := refreshCookie
+	status, body, refreshCookie = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", nil, activeRefreshCookie)
 	if status != stdhttp.StatusNoContent {
 		t.Fatalf("logout expected status %d, got %d body=%s", stdhttp.StatusNoContent, status, string(body))
 	}
 
-	status, body = doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", map[string]string{
-		"refresh_token": refreshResp.RefreshToken,
-	})
+	if refreshCookie == nil || refreshCookie.MaxAge >= 0 {
+		t.Fatal("logout must expire the refresh cookie")
+	}
+	status, body, _ = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", nil, activeRefreshCookie)
 	if status != stdhttp.StatusUnauthorized {
 		t.Fatalf("refresh after logout expected status %d, got %d body=%s", stdhttp.StatusUnauthorized, status, string(body))
 	}
@@ -250,6 +252,20 @@ func doJSONRequest(
 	accessToken string,
 	body any,
 ) (int, []byte) {
+	status, responseBody, _ := doJSONRequestWithCookie(t, server, method, path, tenantID, accessToken, body, nil)
+	return status, responseBody
+}
+
+func doJSONRequestWithCookie(
+	t *testing.T,
+	server stdhttp.Handler,
+	method string,
+	path string,
+	tenantID uuid.UUID,
+	accessToken string,
+	body any,
+	cookie *stdhttp.Cookie,
+) (int, []byte, *stdhttp.Cookie) {
 	t.Helper()
 
 	var payload []byte
@@ -269,8 +285,18 @@ func doJSONRequest(
 	if accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
 
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
-	return rec.Code, rec.Body.Bytes()
+	var responseCookie *stdhttp.Cookie
+	for _, candidate := range rec.Result().Cookies() {
+		if candidate.Name == "sessionflow_refresh" {
+			responseCookie = candidate
+			break
+		}
+	}
+	return rec.Code, rec.Body.Bytes(), responseCookie
 }

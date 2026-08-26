@@ -4,6 +4,8 @@ import "testing"
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "")
+	t.Setenv("APP_VERSION", "")
+	t.Setenv("BUILD_REVISION", "")
 	t.Setenv("HTTP_PORT", "")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
@@ -12,6 +14,9 @@ func TestLoadDefaults(t *testing.T) {
 
 	if cfg.AppEnv != "local" {
 		t.Fatalf("expected APP_ENV local, got %q", cfg.AppEnv)
+	}
+	if cfg.AppVersion != "development" || cfg.BuildRevision != "unknown" {
+		t.Fatalf("safe build provenance defaults missing: version=%q revision=%q", cfg.AppVersion, cfg.BuildRevision)
 	}
 	if cfg.HTTPPort != "8080" {
 		t.Fatalf("expected HTTP_PORT 8080, got %q", cfg.HTTPPort)
@@ -52,10 +57,8 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestValidateAllowsDefaultSecretInLocal(t *testing.T) {
-	cfg := Config{
-		AppEnv:          "local",
-		JWTAccessSecret: defaultJWTAccessSecret,
-	}
+	cfg := validTestConfig()
+	cfg.JWTAccessSecret = defaultJWTAccessSecret
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected local config to allow default secret, got %v", err)
@@ -63,10 +66,9 @@ func TestValidateAllowsDefaultSecretInLocal(t *testing.T) {
 }
 
 func TestValidateRejectsDefaultSecretOutsideLocal(t *testing.T) {
-	cfg := Config{
-		AppEnv:          "production",
-		JWTAccessSecret: defaultJWTAccessSecret,
-	}
+	cfg := validTestConfig()
+	cfg.AppEnv = "production"
+	cfg.JWTAccessSecret = defaultJWTAccessSecret
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected non-local config to reject default secret")
@@ -74,13 +76,65 @@ func TestValidateRejectsDefaultSecretOutsideLocal(t *testing.T) {
 }
 
 func TestValidateRejectsBlankSecret(t *testing.T) {
-	cfg := Config{
-		AppEnv:          "local",
-		JWTAccessSecret: "   ",
-	}
+	cfg := validTestConfig()
+	cfg.JWTAccessSecret = "   "
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected blank secret to be rejected")
+	}
+}
+
+func TestValidateAllowsClinicalAudioAfterEphemeralGate(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ClinicalAudioEnabled = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected ephemeral clinical audio to be configurable, got %v", err)
+	}
+}
+
+func TestValidateRejectsRemoteTranscriberURL(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.TranscriberBaseURL = "https://speech.example.com"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected remote transcriber URL to be rejected")
+	}
+}
+
+func TestValidateRejectsRemoteOllamaURL(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.OllamaBaseURL = "https://ollama.example.com"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected remote Ollama URL to be rejected")
+	}
+}
+
+func TestValidateAcceptsIPv6LoopbackOllamaURL(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.OllamaBaseURL = "http://[::1]:11434"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected loopback Ollama URL to be accepted, got %v", err)
+	}
+}
+
+func validTestConfig() Config {
+	return Config{
+		AppEnv:                      "local",
+		JWTAccessSecret:             "local-secret",
+		AuthCookieSameSite:          "lax",
+		ClinicalRiskProtocol:        "Protocolo clínico ficticio suficientemente detallado para esta prueba.",
+		TranscriberBaseURL:          "http://127.0.0.1:8091",
+		TranscriberTimeoutSec:       120,
+		TranscriberMaxAudioMB:       25,
+		OllamaBaseURL:               "http://127.0.0.1:11434",
+		OllamaModel:                 "qwen3.5:9b",
+		OllamaContextTokens:         4096,
+		OllamaTemperature:           0.1,
+		OllamaTimeoutSeconds:        45,
+		OllamaMaxOutputTokens:       384,
+		OllamaReviewContextTokens:   8192,
+		OllamaReviewTemperature:     0.15,
+		OllamaReviewTimeoutSeconds:  180,
+		OllamaReviewMaxOutputTokens: 1024,
 	}
 }
 

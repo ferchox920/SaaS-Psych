@@ -1,0 +1,58 @@
+export const navigationItems = [
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    description: "Resumen operativo",
+    icon: "dashboard",
+    requiresAdmin: false,
+  },
+  {
+    href: "/clients",
+    label: "Clients",
+    description: "Base de clientes",
+    icon: "clients",
+    requiresAdmin: false,
+  },
+  {
+    href: "/appointments",
+    label: "Appointments",
+    description: "Agenda y slots",
+    icon: "appointments",
+    requiresAdmin: false,
+  },
+  {
+		href: "/clinical-workspace",
+		label: "Supervisor local",
+		description: "Bloc de microprocesos",
+		icon: "clinicalWorkspace",
+		requiresAdmin: false,
+	},
+	{
+		href: "/clinical-formulation",
+		label: "Formulación",
+		description: "Memoria longitudinal",
+		icon: "clinicalFormulation",
+		requiresAdmin: false,
+	},
+	{
+		href: "/clinical-review",
+		label: "Revisión posterior",
+		description: "Análisis longitudinal",
+		icon: "clinicalReview",
+		requiresAdmin: false,
+	},
+	{
+    href: "/session-notes",
+    label: "Session notes",
+    description: "Registro clinico",
+    icon: "sessionNotes",
+    requiresAdmin: false,
+  },
+  {
+    href: "/audit",
+    label: "Audit",
+    description: "Trazabilidad de cambios",
+    icon: "audit",
+    requiresAdmin: true,
+  },
+] as const;

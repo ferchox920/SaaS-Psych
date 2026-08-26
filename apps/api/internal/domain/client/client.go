@@ -10,13 +10,16 @@ import (
 )
 
 type Entity struct {
-	ID          uuid.UUID
-	TenantID    uuid.UUID
-	FullName    string
-	Contact     string
-	NotesPublic string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID               uuid.UUID
+	TenantID         uuid.UUID
+	FullName         string
+	Contact          string
+	NotesPublic      string
+	ArchivedAt       *time.Time
+	ArchivedByUserID *uuid.UUID
+	ArchiveReason    string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func NewEntity(tenantID uuid.UUID, fullName, contact, notesPublic string, now time.Time) (Entity, error) {

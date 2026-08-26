@@ -235,6 +235,193 @@
       ],
       "title": "Requests in Last 15m by Status",
       "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(appointments_created_total{result=\"success\"}[5m]))",
+          "legendFormat": "created",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum(rate(appointments_canceled_total{result=\"success\"}[5m]))",
+          "legendFormat": "canceled",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Appointments Lifecycle Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "displayMode": "table",
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (reason) (increase(appointments_created_total{result=\"error\"}[15m]))",
+          "legendFormat": "create {{reason}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "sum by (reason) (increase(appointments_canceled_total{result=\"error\"}[15m]))",
+          "legendFormat": "cancel {{reason}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Appointment Errors in Last 15m",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (endpoint, reason) (rate(auth_errors_total[5m]))",
+          "legendFormat": "{{endpoint}} {{reason}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Auth Errors by Endpoint/Reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(clinical_ai_first_token_seconds_bucket[5m])))", "legendFormat": "first token p95 {{mode}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, mode) (rate(clinical_ai_generation_seconds_bucket[5m])))", "legendFormat": "total p95 {{mode}}", "range": true, "refId": "B" }
+      ],
+      "title": "Clinical AI Local Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (disposition) (increase(clinical_ai_suggestion_decisions_total[1h]))", "legendFormat": "{{disposition}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (result, reason) (increase(clinical_transcription_total[1h]))", "legendFormat": "transcription {{result}} {{reason}}", "range": true, "refId": "B" }
+      ],
+      "title": "Clinical Decisions and Transcription",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
@@ -275,6 +462,6 @@
   "timezone": "",
   "title": "SessionFlow API Overview",
   "uid": "sessionflow-api-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

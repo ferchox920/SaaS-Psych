@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	stdhttp "net/http"
 	"net/url"
 	"os"
@@ -47,10 +49,11 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 	authService := authusecase.NewService(authRepo, tokenService, 30*24*time.Hour, auditRepo)
 
 	server := NewServer(ServerDeps{
-		TenantMiddleware: httpmiddleware.RequireTenant(tenantService),
-		AuthMiddleware:   httpmiddleware.RequireAuth("change-me"),
-		AuthHandler:      handlers.NewAuthHandler(authService),
-		AuditHandler:     handlers.NewAuditHandler(auditService),
+		RequestLoggingMiddleware: httpmiddleware.RequestLogging(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		TenantMiddleware:         httpmiddleware.RequireTenant(tenantService),
+		AuthMiddleware:           httpmiddleware.RequireAuth("change-me"),
+		AuthHandler:              handlers.NewAuthHandler(authService),
+		AuditHandler:             handlers.NewAuditHandler(auditService),
 	})
 
 	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
@@ -59,10 +62,10 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	}{}
-	status, body := doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/login", tenantID, "", map[string]string{
+	status, body, refreshCookie := doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/login", tenantID, "", map[string]string{
 		"email":    "owner@tenant-a.local",
 		"password": "ChangeMe123!",
-	})
+	}, nil)
 	if status != stdhttp.StatusOK {
 		t.Fatalf("login expected %d, got %d body=%s", stdhttp.StatusOK, status, string(body))
 	}
@@ -72,31 +75,34 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 	if loginResp.AccessToken == "" {
 		t.Fatalf("missing access token in login response")
 	}
-	if loginResp.RefreshToken == "" {
-		t.Fatalf("missing refresh token in login response")
+	if loginResp.RefreshToken != "" || refreshCookie == nil || !refreshCookie.HttpOnly {
+		t.Fatalf("refresh token must only be set in HttpOnly cookie")
 	}
 
 	refreshResp := struct {
 		RefreshToken string `json:"refresh_token"`
 	}{}
-	status, body = doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", map[string]string{
-		"refresh_token": loginResp.RefreshToken,
-	})
+	status, body, refreshCookie = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", nil, refreshCookie)
 	if status != stdhttp.StatusOK {
 		t.Fatalf("refresh expected %d, got %d body=%s", stdhttp.StatusOK, status, string(body))
 	}
 	if err := json.Unmarshal(body, &refreshResp); err != nil {
 		t.Fatalf("decode refresh: %v", err)
 	}
-	if refreshResp.RefreshToken == "" {
-		t.Fatalf("missing rotated refresh token")
+	if refreshResp.RefreshToken != "" || refreshCookie == nil {
+		t.Fatalf("rotated refresh token must remain cookie-only")
 	}
 
-	status, body = doJSONRequest(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", map[string]string{
-		"refresh_token": refreshResp.RefreshToken,
-	})
+	status, body, _ = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", nil, refreshCookie)
 	if status != stdhttp.StatusNoContent {
 		t.Fatalf("logout expected %d, got %d body=%s", stdhttp.StatusNoContent, status, string(body))
+	}
+	var withRequestID int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM audit_logs
+		WHERE tenant_id = $1 AND action LIKE 'auth.%' AND metadata ? 'request_id'
+	`, tenantID).Scan(&withRequestID); err != nil || withRequestID < 3 {
+		t.Fatalf("expected auth audits correlated by request_id, count=%d err=%v", withRequestID, err)
 	}
 
 	auditResp := struct {

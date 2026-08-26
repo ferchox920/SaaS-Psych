@@ -23,6 +23,7 @@ Se formaliza como decision arquitectonica que:
 2. La recomendacion de `PROJECT_GUIDELINES.md` se interpreta como una arquitectura logica, no como un requisito literal de paths en raiz.
 3. Toda query a Postgres o Redis que opere sobre datos de tenant debe ser explicitamente tenant-aware.
 4. La revision de PR debe incluir una checklist obligatoria para validar filtros, joins, updates, deletes y tests de aislamiento por tenant.
+5. El paquete `apps/api/internal/infra/db` mantiene un test automatizado que falla si un metodo de repositorio con acceso a DB no referencia `tenant_id`, salvo excepciones explicitamente permitidas.
 
 ## Consecuencias
 
@@ -34,8 +35,8 @@ Positivas:
 
 Limitaciones:
 
-- Esto no reemplaza enforcement automatico en CI o linting.
-- El cumplimiento sigue dependiendo de disciplina de revision hasta que exista una regla automatizada.
+- El guardrail automatico es intencionalmente conservador y cubre el patron actual de repositorios.
+- Consultas globales nuevas requieren una excepcion explicita en el test para no degradar aislamiento por accidente.
 
 ## Guardrails operativos
 
@@ -52,3 +53,4 @@ Al agregar o modificar acceso a datos:
 - `docs/PR_REVIEW_CHECKLIST.md`
 - `apps/api/cmd/server/main.go`
 - `apps/api/internal/http/server.go`
+- `apps/api/internal/infra/db/tenant_aware_query_guard_test.go`

@@ -55,7 +55,22 @@ Preflight recomendado antes de tests de integracion locales:
 make integration-preflight
 ```
 
-Este comando detecta temprano drift del entorno local: valida health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
+Este comando detecta temprano drift del entorno local: valida conflictos por contenedores legacy usando `5432/6379`, health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
+
+Si estas en Windows sin `make`, el equivalente manual es:
+
+```powershell
+docker compose up -d postgres redis
+docker compose exec -T postgres pg_isready -U sessionflow -d sessionflow
+docker compose exec -T postgres sh -lc "PGPASSWORD=sessionflow psql -U sessionflow -d sessionflow -c 'select 1' >/dev/null"
+docker compose exec -T redis redis-cli ping
+```
+
+Si el entorno local ya quedo inconsistente y queres reconstruirlo antes de volver a testear, usar:
+
+```bash
+make integration-recover-local
+```
 
 ## 2) Logs correlacionados (request_id / trace_id)
 
@@ -178,6 +193,31 @@ Impacto:
 - `make db-reset-local` borra el volumen local `sessionflow_postgres_data`.
 - Debe usarse solo en entorno local cuando se acepta perder el estado persistido de Postgres.
 
+Si `docker compose up -d postgres redis` o `make integration-preflight` falla por puertos ocupados, revisar contenedores legacy antes de tocar volumenes:
+
+```bash
+docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker compose down --remove-orphans
+```
+
+Si el conflicto es por nombres reservados de contenedores legacy:
+
+```powershell
+docker rm -f sessionflow-postgres sessionflow-redis
+docker compose up -d postgres redis
+```
+
+Reset equivalente sin `make` en Windows:
+
+```powershell
+docker compose down --remove-orphans
+docker volume rm -f sessionflow_postgres_data
+docker compose up -d postgres redis
+migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up
+```
+
+Solo despues de descartar conflicto de contenedores conviene usar `make db-reset-local`.
+
 Verificar schema/migraciones:
 
 ```bash
@@ -277,4 +317,12 @@ make test
 # Test con DB integrada (opcional)
 make integration-preflight
 make test-integration-db
+
+# Recuperacion local + test integrado real
+make test-integration-db-reset
 ```
+
+Estandar actual local/CI para integracion DB:
+- alcance: `./internal/http ./internal/infra/db`
+- flags: `go test -count=1`
+- env: `RUN_PG_INTEGRATION=1`

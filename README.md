@@ -4,8 +4,6 @@
 
 SessionFlow es una aplicación multi-tenant para organizar pacientes, citas y sesiones clínicas. Sus informes y propuestas asistidas por IA requieren revisión humana antes de incorporarse a la memoria longitudinal. Es un proyecto de portafolio técnico: la demostración usa exclusivamente datos ficticios y el software **no sustituye el juicio clínico**.
 
-Descripción breve para GitHub: *Flujo clínico multi-tenant con revisión humana, auditoría y demo ficticia reproducible.* Topics propuestos: `go`, `nextjs`, `postgresql`, `multi-tenant`, `human-in-the-loop`, `clinical-workflow`, `portfolio-project`. La metadata remota se publica por separado del código.
-
 ## Alcance evaluable
 
 El recorrido conecta paciente → cita → sesión → informe → edición y aprobación de una revisión concreta → propuesta longitudinal → decisión por operación → merge → estado y procedencia. Incluye autenticación JWT con rotación transaccional de refresh tokens, asignaciones clínicas independientes del rol administrativo, auditoría, observabilidad y pruebas de concurrencia sobre PostgreSQL real.

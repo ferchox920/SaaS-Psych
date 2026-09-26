@@ -1,6 +1,8 @@
 # RELEASE CHECKLIST - SessionFlow API
 
-Checklist minimo de release para asegurar calidad funcional, operativa y de observabilidad.
+Checklist operativo para evaluar una entrega, no una certificación de producción. La CI de la PR de portafolio verifica automáticamente formato, tests, lint y build de Go; tests de integración con PostgreSQL y Redis; lint, tipos, build y tests de navegador del frontend; y tests del transcriptor Python. Consultar la ejecución de CI del commit evaluado, no asumir que el resultado de una ejecución anterior sigue vigente. Los controles manuales de este documento (smoke, métricas, alertas y trazas) no quedan aprobados por CI.
+
+Este documento conserva casillas sin marcar para cada nueva evaluación. Ningún comando de recuperación que borre datos es un requisito para revisar la PR.
 
 ## 1) Variables de entorno requeridas
 
@@ -66,7 +68,7 @@ golangci-lint run --config .golangci.yml --timeout=3m
 - [ ] No hay contenedores legacy ocupando los puertos publicados `5433`/`6379` (PostgreSQL escucha en `5432` dentro del contenedor).
 - [ ] Preflight local valida credenciales/estado de Postgres y respuesta de Redis.
 - [ ] Migraciones aplicadas.
-- [ ] Tests con `RUN_PG_INTEGRATION=1` pasan con el mismo alcance que CI (`./internal/http ./internal/infra/db`).
+- [ ] Tests con `RUN_PG_INTEGRATION=1` pasan en local. CI ejecuta `go test -count=1 ./...` después de aplicar migraciones.
 
 Comandos:
 
@@ -75,29 +77,15 @@ docker compose up -d postgres redis
 make integration-preflight
 make db-prepare
 make test-integration-db
-make test-integration-db-reset
 ```
 
-Si `make integration-preflight` falla por drift del volumen local de Postgres (credenciales/estado incompatibles), recuperar el entorno antes de seguir:
-
-```bash
-make db-reset-local
-make migrate-up
-make integration-preflight
-```
-
-Si falla por conflicto de contenedores legacy o puertos ocupados, limpiar primero el host:
+Si falla por puertos ocupados, identificar el proceso/contenedor responsable antes de cambiar nada:
 
 ```bash
 docker ps --filter publish=5433 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
-docker compose down --remove-orphans
 ```
 
-Para validar que la recuperacion local es realmente reproducible, correr al menos una vez:
-
-```bash
-make test-integration-db-reset
-```
+`make db-reset-local`, `make integration-recover-local` y `make test-integration-db-reset` eliminan el volumen `sessionflow_postgres_data` y todos sus datos. Son opciones excepcionales para un entorno local descartable, **solo** tras comprobar el volumen exacto y aceptar expresamente la pérdida de datos; no se ejecutan como preflight ni para resolver un puerto ocupado. `docker compose down --remove-orphans` puede detener otros servicios del proyecto: revisar primero `docker compose ps`.
 
 ### C. Contrato API (OpenAPI + Swagger)
 
@@ -114,14 +102,13 @@ curl -i http://localhost:8080/docs/openapi.yaml
 
 ### D. Verificacion de consistencia documental
 
-- [ ] `SPRINTS.md` y `PROGRESS/PROGRESS_INDEX.md` sin drift de estado para pasos cerrados.
-- [ ] `README.md` (endpoints principales) consistente con `docs/openapi.yaml` y handlers/rutas actuales.
-- [ ] Si hay diferencias, se corrigen antes de release y se registra evidencia en nuevo `PROGRESS/S<SPRINT>/S<SPRINT>_<STEP>.md`.
+- [ ] `README.md`, `docs/DEMO.md` y `docs/openapi.yaml` describen el comportamiento actual, sin confundir el proveedor fijo de demo con análisis clínico real.
+- [ ] Endpoints documentados coinciden con handlers/rutas actuales.
+- [ ] Las diferencias detectadas se corrigen y se documenta la evidencia del commit evaluado.
 
 Comandos sugeridos:
 
 ```bash
-rg "S10_10\\.[1-6]" SPRINTS.md PROGRESS/PROGRESS_INDEX.md
 rg "PUT /api/v1/notes/:id|GET /api/v1/notes/:id|/appointments/:appointment_id/notes" README.md
 rg "/api/v1/notes/\\{id\\}|/api/v1/appointments/\\{appointment_id\\}/notes" docs/openapi.yaml
 rg "PUT|notes" apps/api/internal/http/handlers/session_note.go apps/api/internal/http/server.go
@@ -182,10 +169,12 @@ docker compose up -d otel-collector jaeger
 
 ## 4) Criterios de Go/No-Go
 
-Go:
-- Todos los checks A-G en verde.
+Go para una entrega operativa:
+- CI verde para el commit exacto que se entrega y controles manuales A-G verificados en el entorno de destino.
 - Sin alertas `firing` inesperadas en Prometheus durante smoke.
 - Sin errores 5xx no explicados en logs.
+
+Una PR de portafolio con CI verde demuestra los controles automatizados, pero **no** equivale a un Go operativo ni certifica observabilidad o seguridad de producción.
 
 No-Go:
 - Fallo en tests/lint/build.

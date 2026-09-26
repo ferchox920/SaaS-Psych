@@ -79,8 +79,8 @@ export function AppointmentFormCard({
             <CardTitle>{mode === "edit" ? "Editar cita" : "Nueva cita"}</CardTitle>
             <CardDescription>
               {mode === "edit"
-                ? "Ajusta horario o ubicacion. El cliente no cambia en el backend actual."
-                : "Crea un turno vinculandolo a un cliente existente."}
+                ? "Ajusta el horario o la ubicación de la cita."
+                : "Crea una cita para un paciente existente."}
             </CardDescription>
           </div>
         </div>
@@ -114,7 +114,7 @@ export function AppointmentFormCard({
             <FieldError message={form.formState.errors.client_id?.message} />
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4">
             <div className="space-y-2">
               <Label htmlFor="starts_at">Inicio</Label>
               <Input id="starts_at" type="datetime-local" {...form.register("starts_at")} />
@@ -142,7 +142,7 @@ export function AppointmentFormCard({
 
           {isCanceled ? (
             <div className="rounded-2xl border border-border/70 bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-              Esta cita ya fue cancelada. El backend no permite editar citas canceladas.
+              Esta cita ya fue cancelada y no puede editarse.
             </div>
           ) : null}
 
@@ -179,11 +179,9 @@ export function AppointmentFormCard({
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <MapPin className="size-4" />
-              Las fechas se envian en RFC3339 al backend y la cancelacion preserva historial en lugar de borrar.
-            </div>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <MapPin className="size-4" />
+            Las citas canceladas permanecen en el historial.
           </div>
         </form>
       </CardContent>

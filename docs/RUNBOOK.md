@@ -55,7 +55,7 @@ Preflight recomendado antes de tests de integracion locales:
 make integration-preflight
 ```
 
-Este comando detecta temprano drift del entorno local: valida conflictos por contenedores legacy usando `5432/6379`, health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
+Este comando detecta temprano drift del entorno local: valida conflictos por contenedores legacy usando `5433/6379`, health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
 
 Si estas en Windows sin `make`, el equivalente manual es:
 
@@ -66,11 +66,7 @@ docker compose exec -T postgres sh -lc "PGPASSWORD=sessionflow psql -U sessionfl
 docker compose exec -T redis redis-cli ping
 ```
 
-Si el entorno local ya quedo inconsistente y queres reconstruirlo antes de volver a testear, usar:
-
-```bash
-make integration-recover-local
-```
+Si el entorno local quedó inconsistente, diagnosticar credenciales, contenedores y volumen antes de reconstruir. `make integration-recover-local` **borra** el volumen `sessionflow_postgres_data` por medio de `db-reset-local`; usarlo solo en un entorno descartable tras comprobar el destino exacto y aceptar expresamente la pérdida de datos.
 
 ## 2) Logs correlacionados (request_id / trace_id)
 
@@ -102,7 +98,7 @@ Objetivo: confirmar si hay degradacion o incidente en curso.
 
 Fuentes:
 - Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (admin/admin)
+- Grafana: `http://localhost:3001` (admin/admin). El puerto `3000` queda libre para la web de demo.
 - Dashboard: `SessionFlow API Overview`
 
 Consultas utiles en Prometheus:
@@ -182,41 +178,15 @@ Si estaba caido:
 docker compose up -d postgres
 ```
 
-Si el contenedor arranca pero falla autenticacion con `sessionflow/sessionflow`, asumir primero drift del volumen local antes que un bug de aplicacion:
+Si el contenedor arranca pero falla autenticación con `sessionflow/sessionflow`, revisar primero `docker compose ps`, los logs de Postgres, la configuración de entorno y el volumen asociado. No reinicializar la base para tratar un fallo de autenticación sin comprobar la causa.
+
+Si `docker compose up -d postgres redis` o `make integration-preflight` falla por puertos ocupados, identificar el dueño del puerto antes de tocar contenedores o volúmenes:
 
 ```bash
-make db-reset-local
-make migrate-up
+docker ps --filter publish=5433 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
 ```
 
-Impacto:
-- `make db-reset-local` borra el volumen local `sessionflow_postgres_data`.
-- Debe usarse solo en entorno local cuando se acepta perder el estado persistido de Postgres.
-
-Si `docker compose up -d postgres redis` o `make integration-preflight` falla por puertos ocupados, revisar contenedores legacy antes de tocar volumenes:
-
-```bash
-docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
-docker compose down --remove-orphans
-```
-
-Si el conflicto es por nombres reservados de contenedores legacy:
-
-```powershell
-docker rm -f sessionflow-postgres sessionflow-redis
-docker compose up -d postgres redis
-```
-
-Reset equivalente sin `make` en Windows:
-
-```powershell
-docker compose down --remove-orphans
-docker volume rm -f sessionflow_postgres_data
-docker compose up -d postgres redis
-migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up
-```
-
-Solo despues de descartar conflicto de contenedores conviene usar `make db-reset-local`.
+Detener solo el contenedor conflictivo que se haya identificado y cuyo estado pueda perderse. `docker compose down --remove-orphans` puede detener servicios adicionales del proyecto. `make db-reset-local`, `make integration-recover-local` y `make test-integration-db-reset` eliminan `sessionflow_postgres_data`: reservarlos para una base local descartable, después de comprobar que ese es el volumen real, hacer copia de lo necesario y aceptar la pérdida de datos. Ninguno resuelve por sí solo un puerto ocupado por un contenedor ajeno.
 
 Verificar schema/migraciones:
 
@@ -318,11 +288,13 @@ make test
 make integration-preflight
 make test-integration-db
 
-# Recuperacion local + test integrado real
-make test-integration-db-reset
+# Recuperación destructiva opcional: ver advertencia de pérdida de datos en sección 5A
+# make test-integration-db-reset
 ```
 
-Estandar actual local/CI para integracion DB:
-- alcance: `./internal/http ./internal/infra/db`
-- flags: `go test -count=1`
-- env: `RUN_PG_INTEGRATION=1`
+Estándar local para integración DB: `./internal/http ./internal/infra/db`, `go test -count=1`, `RUN_PG_INTEGRATION=1`. CI aplica migraciones y prueba `./...` con esa variable.
+# IP cliente y rate limiting
+
+El API utiliza la IP de la conexión TCP para el rate limit de login. Si se despliega detrás de un proxy de confianza, configurar `TRUSTED_PROXY_CIDRS` con sus CIDR separados por comas y hacer que el proxy de borde elimine los encabezados `X-Forwarded-For` entrantes antes de establecer el suyo. Sin esa configuración, los encabezados enviados por clientes no influyen en `RealIP`; detrás de un proxy, el límite se aplica a la IP del proxy.
+
+El servidor limita solicitudes JSON a 1 MiB (también con transferencia fragmentada), sin aplicar ese límite a audio binario, que tiene su propio límite. Los tiempos máximos son 10 s para cabeceras, 60 s para leer una solicitud y 120 s de conexión inactiva. No se configura un timeout global de escritura porque los análisis clínicos usan SSE; el proveedor y las operaciones largas conservan sus propios deadlines.

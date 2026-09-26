@@ -29,9 +29,14 @@ type createAppointmentRequest struct {
 }
 
 type updateAppointmentRequest struct {
-	StartsAt string `json:"starts_at"`
-	EndsAt   string `json:"ends_at"`
-	Location string `json:"location"`
+	StartsAt         string `json:"starts_at"`
+	EndsAt           string `json:"ends_at"`
+	Location         string `json:"location"`
+	ExpectedRevision int64  `json:"expected_revision"`
+}
+
+type cancelAppointmentRequest struct {
+	ExpectedRevision int64 `json:"expected_revision"`
 }
 
 type appointmentResponse struct {
@@ -41,6 +46,7 @@ type appointmentResponse struct {
 	StartsAt  string `json:"starts_at"`
 	EndsAt    string `json:"ends_at"`
 	Status    string `json:"status"`
+	Revision  int64  `json:"revision"`
 	Location  string `json:"location"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
@@ -114,21 +120,25 @@ func (h *AppointmentHandler) List(c echo.Context) error {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", "to must be RFC3339", map[string]any{"field": "to"})
 	}
 
-	items, err := h.service.ListByRange(c.Request().Context(), appointmentusecase.ListInput{
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	page, err := h.service.ListPage(c.Request().Context(), appointmentusecase.ListInput{
 		TenantID:    tenantID,
 		ActorUserID: principal.UserID,
 		From:        from,
 		To:          to,
-	})
+	}, limit, offset)
 	if err != nil {
 		return h.handleAppointmentError(c, err)
 	}
 
-	resp := make([]appointmentResponse, 0, len(items))
-	for _, item := range items {
+	resp := make([]appointmentResponse, 0, len(page.Items))
+	for _, item := range page.Items {
 		resp = append(resp, toAppointmentResponse(item))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": resp})
+	return c.JSON(http.StatusOK, map[string]any{"items": resp, "next_offset": page.NextOffset})
 }
 
 func (h *AppointmentHandler) Update(c echo.Context) error {
@@ -153,6 +163,9 @@ func (h *AppointmentHandler) Update(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid request body", map[string]any{"field": "body"})
 	}
+	if req.ExpectedRevision <= 0 {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "expected_revision must be positive", map[string]any{"field": "expected_revision"})
+	}
 	startsAt, err := time.Parse(time.RFC3339, req.StartsAt)
 	if err != nil {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", "starts_at must be RFC3339", map[string]any{"field": "starts_at"})
@@ -163,12 +176,13 @@ func (h *AppointmentHandler) Update(c echo.Context) error {
 	}
 
 	out, err := h.service.Update(c.Request().Context(), appointmentusecase.UpdateInput{
-		TenantID:      tenantID,
-		AppointmentID: appointmentID,
-		ActorUserID:   principal.UserID,
-		StartsAt:      startsAt,
-		EndsAt:        endsAt,
-		Location:      req.Location,
+		TenantID:         tenantID,
+		AppointmentID:    appointmentID,
+		ActorUserID:      principal.UserID,
+		StartsAt:         startsAt,
+		EndsAt:           endsAt,
+		Location:         req.Location,
+		ExpectedRevision: req.ExpectedRevision,
 	})
 	if err != nil {
 		return h.handleAppointmentError(c, err)
@@ -193,7 +207,11 @@ func (h *AppointmentHandler) Cancel(c echo.Context) error {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", "appointment id must be a valid uuid", map[string]any{"field": "id"})
 	}
 
-	out, err := h.service.Cancel(c.Request().Context(), tenantID, appointmentID, principal.UserID)
+	var req cancelAppointmentRequest
+	if err := c.Bind(&req); err != nil || req.ExpectedRevision <= 0 {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "expected_revision must be positive", map[string]any{"field": "expected_revision"})
+	}
+	out, err := h.service.CancelWithRevision(c.Request().Context(), tenantID, appointmentID, principal.UserID, req.ExpectedRevision)
 	if err != nil {
 		return h.handleAppointmentError(c, err)
 	}
@@ -209,7 +227,7 @@ func defaultAppointmentErrorMappings() []domainErrorMapping {
 		{Target: domainerrors.ErrValidation, Status: http.StatusBadRequest, Code: "validation_error"},
 		{Target: domainerrors.ErrNotFound, Status: http.StatusNotFound, Code: "not_found", Message: "appointment or client not found"},
 		{Target: domainerrors.ErrForbidden, Status: http.StatusForbidden, Code: "forbidden", Message: "client does not belong to tenant"},
-		{Target: domainerrors.ErrConflict, Status: http.StatusConflict, Code: "conflict", Message: "appointment overlaps existing slot"},
+		{Target: domainerrors.ErrConflict, Status: http.StatusConflict, Code: "conflict", Message: "appointment changed or overlaps an existing slot; reload before retrying"},
 	}
 }
 
@@ -221,6 +239,7 @@ func toAppointmentResponse(entity domainappointment.Entity) appointmentResponse 
 		StartsAt:  entity.StartsAt.UTC().Format(time.RFC3339),
 		EndsAt:    entity.EndsAt.UTC().Format(time.RFC3339),
 		Status:    entity.Status,
+		Revision:  entity.Revision,
 		Location:  entity.Location,
 		CreatedAt: entity.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: entity.UpdatedAt.UTC().Format(time.RFC3339),

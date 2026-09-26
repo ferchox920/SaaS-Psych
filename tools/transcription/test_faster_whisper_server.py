@@ -10,9 +10,9 @@ from faster_whisper_server import TranscriptionRuntime
 
 
 class FakeModel:
-    def transcribe(self, path: str, **_kwargs):
-        assert Path(path).exists()
-        return iter([SimpleNamespace(text=" Texto ficticio ")]), SimpleNamespace(language="es", duration=1.0)
+    def transcribe(self, audio_stream, **_kwargs):
+        assert audio_stream.read() == b"fictitious-audio"
+        return iter([SimpleNamespace(start=0.0, end=1.0, text=" Texto ficticio ")]), SimpleNamespace(language="es", duration=1.0)
 
 
 class CleanupTest(unittest.TestCase):

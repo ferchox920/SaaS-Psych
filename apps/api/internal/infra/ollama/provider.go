@@ -34,6 +34,56 @@ type Config struct {
 	ReviewTimeout         time.Duration
 	ReviewMaxOutputTokens int
 	ReviewThink           bool
+	GIRAContextTokens     int
+	GIRATemperature       float64
+	GIRATimeout           time.Duration
+	GIRAMaxOutputTokens   int
+	GIRAThink             bool
+	GIRATopP              float64
+	GIRATopK              int
+	GIRASeed              int
+}
+
+// GIRAFailureDiagnostics contains only operational metadata and normalized
+// validation messages. It intentionally excludes prompts and generated text.
+type GIRAFailureDiagnostics struct {
+	Classification  string
+	FirstFailure    string
+	FinalFailure    string
+	InputBytes      int
+	OutputBytes     int
+	RepairAttempted bool
+	Metrics         clinicalanalysis.GenerationMetrics
+}
+
+type GIRAOutputError struct {
+	Diagnostics GIRAFailureDiagnostics
+	Err         error
+}
+
+func (e *GIRAOutputError) Error() string { return e.Err.Error() }
+func (e *GIRAOutputError) Unwrap() error { return e.Err }
+
+func classifyGIRAFailure(err error) string {
+	message := strings.ToLower(err.Error())
+	switch {
+	case errors.Is(err, context.DeadlineExceeded), strings.Contains(message, "deadline exceeded"):
+		return "TIMEOUT"
+	case strings.Contains(message, "invalid semantic gira proposal"), strings.Contains(message, "json"):
+		return "SCHEMA_MISMATCH"
+	case strings.Contains(message, "unknown") && strings.Contains(message, "ref"):
+		return "INVALID_DEPENDENCY"
+	case strings.Contains(message, "technique"):
+		return "INVALID_TECHNIQUE_VERSION"
+	case strings.Contains(message, "approach"):
+		return "INVALID_APPROACH_VERSION"
+	case strings.Contains(message, "ground"), strings.Contains(message, "evidence"):
+		return "CLINICAL_GROUNDING_FAILURE"
+	case strings.Contains(message, "unsupported"):
+		return "UNSUPPORTED_MECHANISM"
+	default:
+		return "OTHER"
+	}
 }
 
 func (p *Provider) GenerateSessionReport(ctx context.Context, systemPrompt string, input []byte, schema map[string]any) (sessionreport.ProviderOutput, error) {
@@ -41,19 +91,20 @@ func (p *Provider) GenerateSessionReport(ctx context.Context, systemPrompt strin
 		return sessionreport.ProviderOutput{}, clinicalanalysis.ErrProviderBusy
 	}
 	defer p.release()
-	raw, metrics, err := p.generate(ctx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: string(input)}}, schema, true, nil)
+	generationSchema := sessionReportGenerationSchema(schema)
+	raw, metrics, err := p.generate(ctx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: string(input)}}, generationSchema, true, nil)
 	if err != nil {
 		return sessionreport.ProviderOutput{}, err
 	}
-	if json.Valid(raw) {
+	if _, validationErr := sessionreport.DecodeAndValidate(raw); validationErr == nil {
 		return sessionreport.ProviderOutput{JSON: raw, Duration: metrics.Total}, nil
 	}
 	repairPrompt := "Repara el siguiente contenido para que sea exclusivamente JSON válido según el esquema. No agregues explicación ni datos nuevos:\n" + string(raw)
-	repaired, repairMetrics, err := p.generate(ctx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: repairPrompt}}, schema, true, nil)
+	repaired, repairMetrics, err := p.generate(ctx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: repairPrompt}}, generationSchema, true, nil)
 	if err != nil {
 		return sessionreport.ProviderOutput{}, err
 	}
-	if !json.Valid(repaired) {
+	if _, validationErr := sessionreport.DecodeAndValidate(repaired); validationErr != nil {
 		return sessionreport.ProviderOutput{}, clinicalanalysis.ErrInvalidModelOutput
 	}
 	return sessionreport.ProviderOutput{JSON: repaired, Duration: metrics.Total + repairMetrics.Total, Repaired: true}, nil
@@ -91,6 +142,24 @@ func NewProvider(config Config) (*Provider, error) {
 	}
 	if config.ReviewMaxOutputTokens <= 0 {
 		config.ReviewMaxOutputTokens = 1024
+	}
+	if config.GIRAContextTokens <= 0 {
+		config.GIRAContextTokens = config.ReviewContextTokens
+	}
+	if config.GIRATimeout <= 0 {
+		config.GIRATimeout = config.ReviewTimeout
+	}
+	if config.GIRAMaxOutputTokens <= 0 {
+		config.GIRAMaxOutputTokens = 1536
+	}
+	if config.GIRATopP <= 0 {
+		config.GIRATopP = 0.8
+	}
+	if config.GIRATopK <= 0 {
+		config.GIRATopK = 20
+	}
+	if config.GIRASeed == 0 {
+		config.GIRASeed = 42
 	}
 	return &Provider{
 		baseURL: parsed,
@@ -292,27 +361,94 @@ func (p *Provider) InterpretLongitudinal(ctx context.Context, systemPrompt strin
 		return clinicalanalysis.ProviderOutput{}, fmt.Errorf("encode longitudinal input: %w", err)
 	}
 	messages := []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: string(userJSON)}}
-	raw, metrics, err := p.generate(backgroundCtx, messages, longitudinal.JSONSchemaV1(), true, onProgress)
+	longitudinalSchema := longitudinal.JSONSchemaForReport(input.SessionReport)
+	raw, metrics, err := p.generate(backgroundCtx, messages, longitudinalSchema, true, onProgress)
 	if err != nil {
 		return clinicalanalysis.ProviderOutput{}, err
 	}
-	if _, err = longitudinal.DecodeInterpreterResult(raw); err == nil {
+	validate := func(candidate []byte) error {
+		result, validationErr := longitudinal.DecodeInterpreterResult(candidate)
+		if validationErr != nil {
+			return validationErr
+		}
+		if validationErr := longitudinal.ValidateInterpreterSemantics(input.SessionReport, result); validationErr != nil {
+			return validationErr
+		}
+		return longitudinal.ValidateInterpreterReferences(input, result)
+	}
+	if err = validate(raw); err == nil {
 		return clinicalanalysis.ProviderOutput{JSON: raw, Metrics: metrics}, nil
 	}
-	repairPrompt := "Repara el siguiente contenido para que sea exclusivamente JSON válido según el esquema. No agregues explicación ni datos nuevos:\n" + string(raw)
-	repaired, repairMetrics, err := p.generate(backgroundCtx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: repairPrompt}}, longitudinal.JSONSchemaV1(), true, onProgress)
+	candidate := raw
+	combined := metrics
+	for attempt := 0; attempt < 2; attempt++ {
+		repairPrompt := "Repara el siguiente contenido para que sea exclusivamente JSON válido según el esquema y coherente con los UUID y versiones de la entrada original. No agregues explicación ni datos nuevos. Conserva sin cambios las operaciones válidas. Si una operación depende de un target UUID que la entrada propone crear explícitamente, agrega o restaura la operación create correspondiente antes de su primera dependencia. Si referencia una entidad ausente que la entrada no propone crear, elimina solamente esa operación y expresa la insuficiencia en uncertainties; nunca inventes otra referencia ni elimines otras operaciones válidas. Error de validación: " + err.Error() + "\nEntrada original:\n" + string(userJSON) + "\nContenido a reparar:\n" + string(candidate)
+		repaired, repairMetrics, repairErr := p.generate(backgroundCtx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: repairPrompt}}, longitudinalSchema, true, onProgress)
+		if repairErr != nil {
+			return clinicalanalysis.ProviderOutput{}, repairErr
+		}
+		combined.Total += repairMetrics.Total
+		combined.RepairDuration += repairMetrics.Total
+		combined.EvalCount += repairMetrics.EvalCount
+		combined.Repaired = true
+		candidate = repaired
+		if err = validate(candidate); err == nil {
+			return clinicalanalysis.ProviderOutput{JSON: candidate, Metrics: combined}, nil
+		}
+	}
+	return clinicalanalysis.ProviderOutput{}, fmt.Errorf("%w: %v", clinicalanalysis.ErrInvalidModelOutput, err)
+}
+
+func (p *Provider) BuildGIRA(ctx context.Context, systemPrompt string, request longitudinal.GIRAProviderRequest, onProgress func(clinicalanalysis.GenerationProgress)) (clinicalanalysis.ProviderOutput, error) {
+	if !p.acquire() {
+		return clinicalanalysis.ProviderOutput{}, clinicalanalysis.ErrProviderBusy
+	}
+	backgroundCtx, cancel := context.WithCancel(ctx)
+	p.reviewMu.Lock()
+	p.reviewCancel = cancel
+	p.reviewMu.Unlock()
+	defer func() {
+		cancel()
+		p.reviewMu.Lock()
+		p.reviewCancel = nil
+		p.reviewMu.Unlock()
+		p.release()
+	}()
+	userJSON, err := json.Marshal(request.Context)
 	if err != nil {
-		return clinicalanalysis.ProviderOutput{}, err
+		return clinicalanalysis.ProviderOutput{}, fmt.Errorf("encode GIRA input: %w", err)
 	}
-	if _, err = longitudinal.DecodeInterpreterResult(repaired); err != nil {
-		return clinicalanalysis.ProviderOutput{}, clinicalanalysis.ErrInvalidModelOutput
+	messages := []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: string(userJSON)}}
+	schema := request.Schema
+	raw, metrics, err := p.generateGIRA(backgroundCtx, messages, schema, onProgress)
+	metrics.PrimaryDuration = metrics.Total
+	if err != nil {
+		return clinicalanalysis.ProviderOutput{}, &GIRAOutputError{Diagnostics: GIRAFailureDiagnostics{Classification: classifyGIRAFailure(err), InputBytes: len(userJSON), Metrics: metrics}, Err: err}
 	}
-	repairMetrics.Repaired = true
-	repairMetrics.Total += metrics.Total
-	if metrics.FirstToken > 0 {
-		repairMetrics.FirstToken = metrics.FirstToken
+	validate := request.ValidateCandidate
+	if err = validate(raw); err == nil {
+		return clinicalanalysis.ProviderOutput{JSON: raw, Metrics: metrics}, nil
 	}
-	return clinicalanalysis.ProviderOutput{JSON: repaired, Metrics: repairMetrics}, nil
+	firstFailure := err.Error()
+	candidate, combined := raw, metrics
+	combined.RepairReason = classifyGIRAFailure(err)
+	for attempt := 0; attempt < 1; attempt++ {
+		repairPrompt := "Corrige solamente los campos/refs que causan este error y devuelve el objeto JSON completo según el schema. Conserva los elementos válidos. Usa exclusivamente refs y versiones de INPUT; si falta grounding, elimina la propuesta insegura y agrega insufficient_evidence. ERROR_VALIDACION: " + err.Error() + "\nINPUT:\n" + string(userJSON) + "\nPROPUESTA:\n" + string(candidate)
+		repaired, repairMetrics, repairErr := p.generateGIRA(backgroundCtx, []chatMessage{{Role: "system", Content: systemPrompt}, {Role: "user", Content: repairPrompt}}, schema, onProgress)
+		if repairErr != nil {
+			return clinicalanalysis.ProviderOutput{}, &GIRAOutputError{Diagnostics: GIRAFailureDiagnostics{Classification: classifyGIRAFailure(repairErr), FirstFailure: firstFailure, FinalFailure: repairErr.Error(), InputBytes: len(userJSON), OutputBytes: len(candidate), RepairAttempted: true, Metrics: combined}, Err: repairErr}
+		}
+		combined.Total += repairMetrics.Total
+		combined.RepairDuration += repairMetrics.Total
+		combined.EvalCount += repairMetrics.EvalCount
+		combined.Repaired = true
+		candidate = repaired
+		if err = validate(candidate); err == nil {
+			return clinicalanalysis.ProviderOutput{JSON: candidate, Metrics: combined}, nil
+		}
+	}
+	finalErr := fmt.Errorf("%w: %v", clinicalanalysis.ErrInvalidModelOutput, err)
+	return clinicalanalysis.ProviderOutput{}, &GIRAOutputError{Diagnostics: GIRAFailureDiagnostics{Classification: classifyGIRAFailure(err), FirstFailure: firstFailure, FinalFailure: err.Error(), InputBytes: len(userJSON), OutputBytes: len(candidate), RepairAttempted: true, Metrics: combined}, Err: finalErr}
 }
 
 type chatMessage struct {
@@ -334,27 +470,53 @@ func (p *Provider) generate(ctx context.Context, messages []chatMessage, schema 
 	if review {
 		contextTokens, temperature, maxOutputTokens, timeout, think = p.config.ReviewContextTokens, p.config.ReviewTemperature, p.config.ReviewMaxOutputTokens, p.config.ReviewTimeout, p.config.ReviewThink
 	}
+	return p.generateWithProfile(ctx, messages, schema, generationProfile{contextTokens: contextTokens, temperature: temperature, maxOutputTokens: maxOutputTokens, timeout: timeout, think: think}, onProgress)
+}
+
+type generationProfile struct {
+	contextTokens, maxOutputTokens int
+	temperature, topP              float64
+	topK, seed                     int
+	timeout                        time.Duration
+	think                          bool
+}
+
+func (p *Provider) generateGIRA(ctx context.Context, messages []chatMessage, schema map[string]any, onProgress func(clinicalanalysis.GenerationProgress)) ([]byte, clinicalanalysis.GenerationMetrics, error) {
+	return p.generateWithProfile(ctx, messages, schema, generationProfile{contextTokens: p.config.GIRAContextTokens, temperature: p.config.GIRATemperature, maxOutputTokens: p.config.GIRAMaxOutputTokens, timeout: p.config.GIRATimeout, think: p.config.GIRAThink, topP: p.config.GIRATopP, topK: p.config.GIRATopK, seed: p.config.GIRASeed}, onProgress)
+}
+
+func (p *Provider) generateWithProfile(ctx context.Context, messages []chatMessage, schema map[string]any, profile generationProfile, onProgress func(clinicalanalysis.GenerationProgress)) ([]byte, clinicalanalysis.GenerationMetrics, error) {
+	options := map[string]any{
+		"temperature": profile.temperature,
+		"num_ctx":     profile.contextTokens,
+		"num_predict": profile.maxOutputTokens,
+	}
+	if profile.topP > 0 {
+		options["top_p"] = profile.topP
+	}
+	if profile.topK > 0 {
+		options["top_k"] = profile.topK
+	}
+	if profile.seed != 0 {
+		options["seed"] = profile.seed
+	}
 	request := map[string]any{
 		"model":      p.config.Model,
 		"messages":   messages,
 		"stream":     true,
-		"think":      think,
+		"think":      profile.think,
 		"format":     schema,
 		"keep_alive": p.config.KeepAlive,
-		"options": map[string]any{
-			"temperature": temperature,
-			"num_ctx":     contextTokens,
-			"num_predict": maxOutputTokens,
-		},
+		"options":    options,
 	}
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, clinicalanalysis.GenerationMetrics{}, err
 	}
-	if timeout <= 0 {
-		timeout = p.config.Timeout
+	if profile.timeout <= 0 {
+		profile.timeout = p.config.Timeout
 	}
-	timedCtx, cancel := context.WithTimeout(ctx, timeout)
+	timedCtx, cancel := context.WithTimeout(ctx, profile.timeout)
 	defer cancel()
 	httpRequest, err := http.NewRequestWithContext(timedCtx, http.MethodPost, p.endpoint("/api/chat"), bytes.NewReader(body))
 	if err != nil {

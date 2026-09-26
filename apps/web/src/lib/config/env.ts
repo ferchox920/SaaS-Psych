@@ -2,4 +2,5 @@ export const env = {
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME || "SessionFlow",
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000",
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080/api/v1",
+  NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE === "true",
 };

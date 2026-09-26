@@ -16,17 +16,25 @@ import (
 )
 
 const (
-	StatusRunning             = "running"
-	StatusSucceeded           = "succeeded"
-	StatusFailed              = "failed"
-	StatusCancelled           = "cancelled"
-	SourceFormulationSnapshot = "formulation_snapshot"
-	SourceFormulationAnchor   = "formulation_anchor"
-	SourceSessionReport       = "session_report"
-	SourceClinicalEvidence    = "clinical_evidence"
-	SourceClinicalEvent       = "clinical_event"
-	SourceClinicalProcess     = "clinical_process"
-	SourceClinicalHypothesis  = "clinical_hypothesis"
+	StatusRunning              = "running"
+	StatusSucceeded            = "succeeded"
+	StatusFailed               = "failed"
+	StatusCancelled            = "cancelled"
+	SourceFormulationSnapshot  = "formulation_snapshot"
+	SourceFormulationAnchor    = "formulation_anchor"
+	SourceSessionReport        = "session_report"
+	SourceClinicalEvidence     = "clinical_evidence"
+	SourceClinicalEvent        = "clinical_event"
+	SourceClinicalProcess      = "clinical_process"
+	SourceClinicalHypothesis   = "clinical_hypothesis"
+	SourceClinicalTarget       = "clinical_target"
+	SourceClinicalGoal         = "clinical_goal"
+	SourceGoalIndicator        = "goal_indicator"
+	SourceTherapeuticRationale = "therapeutic_rationale"
+	SourceGIRA                 = "gira"
+	SourceGIRAPhase            = "gira_phase"
+	SourceApproachDefinition   = "therapeutic_approach_definition"
+	SourceTechniqueDefinition  = "therapeutic_technique_definition"
 )
 
 type Source struct {
@@ -141,7 +149,7 @@ func CanonicalSources(tenantID uuid.UUID, sources []Source) ([]Source, error) {
 			return nil, domainerrors.NewValidation("AI run source_id is required")
 		}
 		switch out[i].SourceType {
-		case SourceFormulationSnapshot, SourceFormulationAnchor, SourceSessionReport, SourceClinicalEvidence, SourceClinicalEvent, SourceClinicalProcess, SourceClinicalHypothesis:
+		case SourceFormulationSnapshot, SourceFormulationAnchor, SourceSessionReport, SourceClinicalEvidence, SourceClinicalEvent, SourceClinicalProcess, SourceClinicalHypothesis, SourceClinicalTarget, SourceClinicalGoal, SourceGoalIndicator, SourceTherapeuticRationale, SourceGIRA, SourceGIRAPhase, SourceApproachDefinition, SourceTechniqueDefinition:
 		default:
 			return nil, domainerrors.NewValidation("invalid AI run source_type")
 		}

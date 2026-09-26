@@ -16,7 +16,7 @@ func TestUserRolesRejectCrossTenantUserReferencePostgresIntegration(t *testing.T
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable"
 	}
 
 	ctx := context.Background()

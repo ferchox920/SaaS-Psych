@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sessionflow/apps/api/internal/usecase/consent"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ type Metrics interface {
 }
 
 type Service struct {
+	consent       consent.Authorizer
 	provider      ClinicalInferenceProvider
 	appointments  AppointmentRepository
 	access        ClinicalAccess
@@ -134,6 +136,7 @@ func (s *Service) Unload(ctx context.Context) error {
 	return s.provider.UnloadModel(ctx)
 }
 
+func (s *Service) WithConsent(a consent.Authorizer) *Service { s.consent = a; return s }
 func (s *Service) AnalyzeLive(ctx context.Context, input AnalyzeLiveInput, onProgress func(GenerationProgress)) (output AnalyzeLiveOutput, err error) {
 	contextChars := len([]rune(input.Request.Fragment + input.Request.PreviousIntervention + input.Request.PatientResponse))
 	defer func() {
@@ -157,6 +160,11 @@ func (s *Service) AnalyzeLive(ctx context.Context, input AnalyzeLiveInput, onPro
 	}
 	if !allowed {
 		return AnalyzeLiveOutput{}, domainerrors.ErrForbidden
+	}
+	if s.consent != nil {
+		if _, err = s.consent.Authorize(ctx, input.TenantID, appointment.ClientID, consent.LocalAI, "live_analysis", input.AppointmentID); err != nil {
+			return AnalyzeLiveOutput{}, err
+		}
 	}
 	request := input.Request
 	var runSources []clinicalairun.Source
@@ -305,6 +313,11 @@ func (s *Service) ReviewSession(ctx context.Context, input ReviewSessionInput, o
 		return ReviewOutput{}, domainerrors.ErrForbidden
 	}
 
+	if s.consent != nil {
+		if _, err = s.consent.Authorize(ctx, input.TenantID, appointment.ClientID, consent.LocalAI, "session_review", input.AppointmentID); err != nil {
+			return ReviewOutput{}, err
+		}
+	}
 	request := ReviewRequest{SessionText: text}
 	var runSources []clinicalairun.Source
 	if s.memory != nil {
@@ -472,6 +485,12 @@ func validateAnalyzeInput(input AnalyzeLiveInput) error {
 	fragmentLength := len([]rune(strings.TrimSpace(input.Request.Fragment)))
 	if fragmentLength == 0 || fragmentLength > 12000 {
 		return domainerrors.NewValidation("fragment must contain between 1 and 12000 characters")
+	}
+	if len([]rune(input.Request.PreviousIntervention)) > 2000 {
+		return domainerrors.NewValidation("previous_intervention cannot exceed 2000 characters")
+	}
+	if len([]rune(input.Request.PatientResponse)) > 2000 {
+		return domainerrors.NewValidation("patient_response cannot exceed 2000 characters")
 	}
 	if len(input.Request.RelevantContext) > 4 {
 		return domainerrors.NewValidation("relevant_context cannot contain more than 4 items")

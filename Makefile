@@ -8,7 +8,7 @@ POSTGRES_VOLUME ?= sessionflow_postgres_data
 INTEGRATION_TEST_PACKAGES ?= ./internal/http ./internal/infra/db
 GO_TEST_INTEGRATION_FLAGS ?= -count=1
 
-.PHONY: tools db-up db-down db-reset-local integration-preflight integration-recover-local migrate-up migrate-down migrate-down-1 migrate-status db-prepare test test-integration-db test-integration-db-reset
+.PHONY: tools db-up db-down db-reset-local integration-preflight integration-recover-local migrate-up migrate-down migrate-down-1 migrate-status db-prepare demo-prepare demo-seed test test-integration-db test-integration-db-reset
 
 tools:
 	@MIGRATE_VERSION=$(MIGRATE_VERSION) bash scripts/install_migrate.sh
@@ -27,13 +27,13 @@ db-reset-local:
 integration-preflight: db-up
 	@echo "Checking for legacy containers using required ports..."
 	@pg_conflicts=""; \
-	for name in $$(docker ps --filter publish=5432 --format '{{.Names}}'); do \
+	for name in $$(docker ps --filter publish=5433 --format '{{.Names}}'); do \
 		if [ "$$name" != "sessionflow-postgres" ]; then \
 			pg_conflicts="$$pg_conflicts $$name"; \
 		fi; \
 	done; \
 	if [ -n "$$pg_conflicts" ]; then \
-		echo "Port 5432 is already in use by:$$pg_conflicts"; \
+		echo "Port 5433 is already in use by:$$pg_conflicts"; \
 		echo "Stop/remove conflicting legacy containers before running integration tests."; \
 		exit 1; \
 	fi
@@ -73,6 +73,11 @@ migrate-status:
 
 db-prepare:
 	$(MIGRATE) -path $(MIGRATIONS_DIR) -database "$(DATABASE_URL)" up
+
+demo-seed:
+	docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U sessionflow -d sessionflow < tools/demo/seed.sql
+
+demo-prepare: db-up db-prepare demo-seed
 
 test:
 	cd $(APP_DIR) && go test ./...

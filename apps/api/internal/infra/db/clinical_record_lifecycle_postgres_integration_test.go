@@ -80,7 +80,8 @@ func TestClientAndAppointmentWritesAreAssignedAndAuditedTransactionallyPostgresI
 	}
 	appointment.Location = "Fictitious room 2"
 	appointment.UpdatedAt = now.Add(4 * time.Minute)
-	if _, err := appointmentRepo.Update(ctx, appointment, actorID, "appointment.update"); err != nil {
+	appointment, err = appointmentRepo.Update(ctx, appointment, actorID, "appointment.update")
+	if err != nil {
 		t.Fatalf("update appointment: %v", err)
 	}
 	appointment.Status = domainappointment.StatusCanceled

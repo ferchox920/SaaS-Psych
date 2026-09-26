@@ -16,6 +16,7 @@ import (
 
 	domainerrors "sessionflow/apps/api/internal/domain/errors"
 	clinicalairun "sessionflow/apps/api/internal/usecase/clinicalairun"
+	"sessionflow/apps/api/internal/usecase/consent"
 )
 
 var ErrInvalidOutput = errors.New("invalid session report output")
@@ -26,7 +27,7 @@ type Repository interface {
 	List(context.Context, uuid.UUID, uuid.UUID) ([]Report, error)
 	Get(context.Context, uuid.UUID, uuid.UUID) (Report, error)
 	Update(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int, ReportV1) (Report, error)
-	Approve(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Report, error)
+	Approve(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int) (Report, error)
 }
 type ClinicalAccess interface {
 	CanAccessClient(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, ...string) (bool, error)
@@ -39,6 +40,7 @@ type Metrics interface {
 	RecordSessionReportApproval(string)
 }
 type Service struct {
+	consent             consent.Authorizer
 	repo                Repository
 	access              ClinicalAccess
 	runs                *clinicalairun.Service
@@ -60,7 +62,8 @@ type UpdateInput struct {
 func NewService(repo Repository, access ClinicalAccess, runs *clinicalairun.Service, provider Provider, providerName, model string, parameters map[string]any) *Service {
 	return &Service{repo: repo, access: access, runs: runs, provider: provider, providerName: providerName, model: model, parameters: parameters}
 }
-func (s *Service) WithMetrics(metrics Metrics) *Service { s.metrics = metrics; return s }
+func (s *Service) WithMetrics(metrics Metrics) *Service      { s.metrics = metrics; return s }
+func (s *Service) WithConsent(a consent.Authorizer) *Service { s.consent = a; return s }
 
 func (s *Service) Generate(ctx context.Context, input GenerateInput) (out Report, err error) {
 	started := time.Now()
@@ -84,8 +87,13 @@ func (s *Service) Generate(ctx context.Context, input GenerateInput) (out Report
 	if details.Status != "completed" {
 		return Report{}, domainerrors.NewValidation("session report generation requires a completed clinical session")
 	}
-	if err = s.require(ctx, input.TenantID, input.ActorUserID, details.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, input.TenantID, input.ActorUserID, details.ClientID, "treating"); err != nil {
 		return Report{}, err
+	}
+	if s.consent != nil {
+		if _, err = s.consent.Authorize(ctx, input.TenantID, details.ClientID, consent.LocalAI, "session_report_generate", input.SessionID); err != nil {
+			return Report{}, err
+		}
 	}
 	run, err := s.runs.Start(ctx, clinicalairun.StartInput{TenantID: input.TenantID, ClientID: details.ClientID, AppointmentID: details.AppointmentID, ClinicalSessionID: &details.ID, CreatedByUserID: input.ActorUserID, Provider: s.providerName, Model: s.model, Operation: "generate_session_report", PromptName: "session-report", PromptVersion: SchemaVersion, Parameters: s.parameters, Input: struct{ SessionText string }{text}, Context: struct {
 		SessionID uuid.UUID
@@ -122,7 +130,7 @@ func (s *Service) List(ctx context.Context, tenantID, sessionID, actorID uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	if err = s.require(ctx, tenantID, actorID, details.ClientID, "treating", "supervisor"); err != nil {
+	if err := s.require(ctx, tenantID, actorID, details.ClientID, "treating", "supervisor"); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, tenantID, sessionID)
@@ -136,7 +144,7 @@ func (s *Service) Get(ctx context.Context, tenantID, reportID, actorID uuid.UUID
 	if err != nil {
 		return Report{}, err
 	}
-	if err = s.require(ctx, tenantID, actorID, details.ClientID, "treating", "supervisor"); err != nil {
+	if err := s.require(ctx, tenantID, actorID, details.ClientID, "treating", "supervisor"); err != nil {
 		return Report{}, err
 	}
 	return item, nil
@@ -153,7 +161,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (Report, error)
 	if err != nil {
 		return Report{}, err
 	}
-	if err = s.require(ctx, input.TenantID, input.ActorUserID, details.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, input.TenantID, input.ActorUserID, details.ClientID, "treating"); err != nil {
 		return Report{}, err
 	}
 	var stored ReportV1
@@ -168,7 +176,10 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (Report, error)
 	}
 	return s.repo.Update(ctx, input.TenantID, input.ReportID, input.ActorUserID, input.ExpectedRevision, input.Report)
 }
-func (s *Service) Approve(ctx context.Context, tenantID, reportID, actorID uuid.UUID) (Report, error) {
+func (s *Service) Approve(ctx context.Context, tenantID, reportID, actorID uuid.UUID, expectedRevision int) (Report, error) {
+	if expectedRevision < 1 {
+		return Report{}, domainerrors.NewValidation("expected_revision must be positive")
+	}
 	existing, err := s.repo.Get(ctx, tenantID, reportID)
 	if err != nil {
 		return Report{}, err
@@ -177,10 +188,10 @@ func (s *Service) Approve(ctx context.Context, tenantID, reportID, actorID uuid.
 	if err != nil {
 		return Report{}, err
 	}
-	if err = s.require(ctx, tenantID, actorID, details.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, tenantID, actorID, details.ClientID, "treating"); err != nil {
 		return Report{}, err
 	}
-	out, err := s.repo.Approve(ctx, tenantID, reportID, actorID)
+	out, err := s.repo.Approve(ctx, tenantID, reportID, actorID, expectedRevision)
 	if s.metrics != nil {
 		result := "success"
 		if err != nil {
@@ -216,6 +227,9 @@ func DecodeAndValidate(raw []byte) (ReportV1, error) {
 	return report, nil
 }
 func Validate(r ReportV1) error {
+	if err := validateReportStringBounds(r); err != nil {
+		return err
+	}
 	if r.SchemaVersion != SchemaVersion {
 		return domainerrors.NewValidation("schema_version must be session-report-v1.1")
 	}
@@ -291,6 +305,44 @@ func Validate(r ReportV1) error {
 	for i := 1; i < len(ids); i++ {
 		if ids[i] == ids[i-1] {
 			return domainerrors.NewValidation("session report item IDs must be unique")
+		}
+	}
+	// Only observed or reported report items can support an inference or hypothesis.
+	// Interpretive items must not recursively become their own evidence.
+	evidenceIDs := make(map[string]struct{}, len(r.Facts)+len(r.RelevantChanges)+len(r.PatientResponses)+len(r.AffectiveNodes))
+	for _, item := range r.Facts {
+		evidenceIDs[item.ID] = struct{}{}
+	}
+	for _, item := range r.RelevantChanges {
+		evidenceIDs[item.ID] = struct{}{}
+	}
+	for _, item := range r.PatientResponses {
+		evidenceIDs[item.ID] = struct{}{}
+	}
+	for _, item := range r.AffectiveNodes {
+		evidenceIDs[item.ID] = struct{}{}
+	}
+	validateRefs := func(refs []string) error {
+		seen := make(map[string]struct{}, len(refs))
+		for _, ref := range refs {
+			if _, ok := evidenceIDs[ref]; !ok {
+				return domainerrors.NewValidation("evidence_refs must identify an observed report item")
+			}
+			if _, duplicate := seen[ref]; duplicate {
+				return domainerrors.NewValidation("evidence_refs must be unique within each item")
+			}
+			seen[ref] = struct{}{}
+		}
+		return nil
+	}
+	for _, item := range r.InferenceCandidates {
+		if err := validateRefs(item.EvidenceRefs); err != nil {
+			return err
+		}
+	}
+	for _, item := range r.HypothesisCandidates {
+		if err := validateRefs(item.EvidenceRefs); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -106,6 +106,48 @@ func (r *AuthRepository) GetRefreshToken(ctx context.Context, tenantID uuid.UUID
 	}, nil
 }
 
+func (r *AuthRepository) RotateRefreshToken(ctx context.Context, tenantID uuid.UUID, oldTokenHash string, replacement authusecase.RefreshTokenWrite, now time.Time) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin refresh token rotation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var userID uuid.UUID
+	var expiresAt time.Time
+	var revokedAt *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT user_id, expires_at, revoked_at
+		FROM refresh_tokens
+		WHERE tenant_id = $1 AND token_hash = $2
+		FOR UPDATE
+	`, tenantID, oldTokenHash).Scan(&userID, &expiresAt, &revokedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domainerrors.ErrNotFound
+		}
+		return fmt.Errorf("lock refresh token for rotation: %w", err)
+	}
+	if revokedAt != nil || !expiresAt.After(now) || replacement.TenantID != tenantID || replacement.UserID != userID {
+		return domainerrors.ErrUnauthorized
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE refresh_tokens SET revoked_at = $3
+		WHERE tenant_id = $1 AND token_hash = $2 AND revoked_at IS NULL
+	`, tenantID, oldTokenHash, now); err != nil {
+		return fmt.Errorf("revoke consumed refresh token: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`, replacement.TenantID, replacement.UserID, replacement.TokenHash, replacement.ExpiresAt); err != nil {
+		return fmt.Errorf("insert rotated refresh token: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit refresh token rotation: %w", err)
+	}
+	return nil
+}
+
 func (r *AuthRepository) RevokeRefreshToken(ctx context.Context, tenantID uuid.UUID, tokenHash string) error {
 	const query = `
 		UPDATE refresh_tokens

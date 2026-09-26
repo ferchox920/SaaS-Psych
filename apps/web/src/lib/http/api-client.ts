@@ -7,6 +7,7 @@ type ApiFetchOptions = {
   tenantId?: string;
   accessToken?: string;
   body?: unknown;
+  rawBody?: Blob;
   headers?: HeadersInit;
   signal?: AbortSignal;
 };
@@ -40,6 +41,7 @@ export async function apiFetch<T>({
   tenantId,
   accessToken,
   body,
+  rawBody,
   headers,
   signal,
 }: ApiFetchOptions): Promise<T> {
@@ -52,7 +54,7 @@ export async function apiFetch<T>({
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...headers,
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: rawBody ?? (body === undefined ? undefined : JSON.stringify(body)),
     signal,
   });
 

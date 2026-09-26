@@ -38,12 +38,12 @@ export function SidebarNav() {
     <aside className="rounded-[32px] bg-sidebar px-5 py-6 text-sidebar-foreground shadow-[0_30px_90px_-50px_rgba(16,24,40,0.8)]">
       <div className="space-y-3 border-b border-white/10 pb-6">
         <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.24em] text-white/70">
-          MVP cockpit
+          SessionFlow
         </div>
         <div>
-          <h2 className="text-2xl font-semibold">Professional workspace</h2>
+          <h2 className="text-2xl font-semibold">Espacio clínico</h2>
           <p className="mt-2 max-w-xs text-sm text-white/70">
-            Base comun para operacion profesional y funciones administrativas dentro del mismo frontend.
+            Pacientes, sesiones y revisión profesional en un mismo lugar.
           </p>
         </div>
       </div>
@@ -62,7 +62,7 @@ export function SidebarNav() {
               className={cn(
                 buttonVariants({ variant: active ? "secondary" : "ghost" }),
                 "h-auto w-full justify-start gap-3 rounded-2xl px-4 py-3 text-left",
-                active && "bg-white text-sidebar shadow-sm hover:bg-white/95",
+                active && "bg-white !text-sidebar shadow-sm hover:bg-white/95 hover:!text-sidebar",
                 !active && "text-white hover:bg-white/10 hover:text-white",
                 disabled && "pointer-events-none opacity-45",
               )}

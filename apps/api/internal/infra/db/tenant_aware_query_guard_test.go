@@ -17,7 +17,9 @@ func TestRepositoryQueriesRemainTenantAware(t *testing.T) {
 	}
 
 	allowedWithoutTenantID := map[string]struct{}{
-		"TenantRepository.Exists": {},
+		"TenantRepository.Exists":                       {},
+		"ClinicalLongitudinalRepository.ListApproaches": {}, // Global, versioned clinical registry.
+		"ClinicalLongitudinalRepository.ListTechniques": {}, // Global, versioned clinical registry.
 	}
 
 	fset := token.NewFileSet()

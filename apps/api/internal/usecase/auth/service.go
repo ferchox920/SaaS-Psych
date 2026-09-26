@@ -18,6 +18,7 @@ type Repository interface {
 	GetUserRole(ctx context.Context, tenantID, userID uuid.UUID) (string, error)
 	CreateRefreshToken(ctx context.Context, token RefreshTokenWrite) error
 	GetRefreshToken(ctx context.Context, tenantID uuid.UUID, tokenHash string) (StoredRefreshToken, error)
+	RotateRefreshToken(ctx context.Context, tenantID uuid.UUID, oldTokenHash string, replacement RefreshTokenWrite, now time.Time) error
 	RevokeRefreshToken(ctx context.Context, tenantID uuid.UUID, tokenHash string) error
 }
 
@@ -213,12 +214,6 @@ func (s *Service) Refresh(ctx context.Context, tenantID uuid.UUID, refreshToken 
 		return LoginOutput{}, err
 	}
 
-	if err := s.repo.RevokeRefreshToken(ctx, tenantID, tokenHash); err != nil {
-		err = fmt.Errorf("revoke old refresh token: %w", err)
-		s.recordAuthError("refresh", err)
-		return LoginOutput{}, err
-	}
-
 	accessToken, expiresIn, err := s.token.IssueAccessToken(stored.UserID, tenantID, role)
 	if err != nil {
 		err = fmt.Errorf("issue access token: %w", err)
@@ -233,13 +228,18 @@ func (s *Service) Refresh(ctx context.Context, tenantID uuid.UUID, refreshToken 
 		return LoginOutput{}, err
 	}
 
-	if err := s.repo.CreateRefreshToken(ctx, RefreshTokenWrite{
+	now := time.Now().UTC()
+	if err := s.repo.RotateRefreshToken(ctx, tenantID, tokenHash, RefreshTokenWrite{
 		TenantID:  tenantID,
 		UserID:    stored.UserID,
 		TokenHash: newHash,
-		ExpiresAt: time.Now().UTC().Add(s.refreshTTL),
-	}); err != nil {
-		err = fmt.Errorf("store rotated refresh token: %w", err)
+		ExpiresAt: now.Add(s.refreshTTL),
+	}, now); err != nil {
+		if errors.Is(err, domainerrors.ErrNotFound) || errors.Is(err, domainerrors.ErrUnauthorized) {
+			err = domainerrors.ErrUnauthorized
+		} else {
+			err = fmt.Errorf("rotate refresh token: %w", err)
+		}
 		s.recordAuthError("refresh", err)
 		return LoginOutput{}, err
 	}

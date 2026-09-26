@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	domainclinicalsession "sessionflow/apps/api/internal/domain/clinicalsession"
+	domainerrors "sessionflow/apps/api/internal/domain/errors"
 	"sessionflow/apps/api/internal/http/handlers"
 	httpmiddleware "sessionflow/apps/api/internal/http/middleware"
 	authusecase "sessionflow/apps/api/internal/usecase/auth"
@@ -89,6 +90,43 @@ func TestClinicalSessionHTTPRequiresAuthenticationAndReturnsEnvelope(t *testing.
 	}
 }
 
+func TestClinicalSessionListHTTPPaginationContract(t *testing.T) {
+	tenantID, userID, clientID := uuid.New(), uuid.New(), uuid.New()
+	secret := "session-page-secret"
+	repo := &httpClinicalSessionRepo{item: domainclinicalsession.Entity{ID: uuid.New(), TenantID: tenantID, ClientID: clientID, TherapistUserID: userID, Status: "in_progress", StartedAt: time.Now().UTC()}}
+	tenantMiddleware := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.SetRequest(c.Request().WithContext(httpmiddleware.WithTenantID(c.Request().Context(), tenantID)))
+			return next(c)
+		}
+	}
+	server := NewServer(ServerDeps{TenantMiddleware: tenantMiddleware, AuthMiddleware: httpmiddleware.RequireAuth(secret), ClinicalSessionHandler: handlers.NewClinicalSessionHandler(clinicalsession.NewService(repo, httpClinicalAccess{true}))})
+	token, _, err := authusecase.NewTokenService(secret, time.Hour).IssueAccessToken(userID, tenantID, "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(query string) (int, map[string]any) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/clients/"+clientID.String()+"/clinical-sessions"+query, nil)
+		req.Header.Set(echo.HeaderAuthorization, "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		var body map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		return rec.Code, body
+	}
+	status, body := get("?limit=1&offset=0")
+	if status != http.StatusOK || body["next_offset"] != nil || body["can_write"] != true || len(body["items"].([]any)) != 1 {
+		t.Fatalf("page status=%d body=%#v", status, body)
+	}
+	status, body = get("?limit=101")
+	if status != http.StatusBadRequest {
+		t.Fatalf("invalid limit status=%d body=%#v", status, body)
+	}
+}
+
 func TestClinicalSessionHTTPEnforcesClinicalWriteAccess(t *testing.T) {
 	tenantID, userID, clientID := uuid.New(), uuid.New(), uuid.New()
 	repo := &httpClinicalSessionRepo{item: domainclinicalsession.Entity{ClientID: clientID}}
@@ -134,8 +172,59 @@ func (r *httpSessionReportRepo) Get(context.Context, uuid.UUID, uuid.UUID) (sess
 func (r *httpSessionReportRepo) Update(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int, sessionreport.ReportV1) (sessionreport.Report, error) {
 	return r.item, nil
 }
-func (r *httpSessionReportRepo) Approve(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (sessionreport.Report, error) {
+
+func (r *httpSessionReportRepo) Approve(_ context.Context, _, _, _ uuid.UUID, expected int) (sessionreport.Report, error) {
+	if r.item.Status != "draft" || r.item.Revision != expected {
+		return sessionreport.Report{}, domainerrors.ErrConflict
+	}
+	r.item.Status = "approved"
+	r.item.Revision++
 	return r.item, nil
+}
+
+func TestSessionReportApprovalHTTPRequiresCurrentRevision(t *testing.T) {
+	tenantID, userID, clientID, sessionID, reportID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	secret := "report-approval-contract-secret"
+	repo := &httpSessionReportRepo{item: sessionreport.Report{ID: reportID, TenantID: tenantID, ClinicalSessionID: sessionID, Revision: 2, Status: "draft"}, details: sessionreport.SessionDetails{ID: sessionID, ClientID: clientID}}
+	tenantMiddleware := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.SetRequest(c.Request().WithContext(httpmiddleware.WithTenantID(c.Request().Context(), tenantID)))
+			return next(c)
+		}
+	}
+	service := sessionreport.NewService(repo, httpClinicalAccess{true}, nil, nil, "", "", nil)
+	server := NewServer(ServerDeps{TenantMiddleware: tenantMiddleware, AuthMiddleware: httpmiddleware.RequireAuth(secret), SessionReportHandler: handlers.NewSessionReportHandler(service)})
+	token, _, err := authusecase.NewTokenService(secret, time.Hour).IssueAccessToken(userID, tenantID, "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	approve := func(body string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/session-reports/"+reportID.String()+"/approve", strings.NewReader(body))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		req.Header.Set(echo.HeaderAuthorization, "Bearer "+token)
+		rec := httptest.NewRecorder()
+		server.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if status := approve(`{}`); status != http.StatusBadRequest {
+		t.Fatalf("missing revision status=%d", status)
+	}
+	if status := approve(`{"expected_revision":1}`); status != http.StatusConflict {
+		t.Fatalf("stale revision status=%d", status)
+	}
+	if repo.item.Status != "draft" || repo.item.Revision != 2 {
+		t.Fatalf("stale approval changed report: %#v", repo.item)
+	}
+	if status := approve(`{"expected_revision":2}`); status != http.StatusOK {
+		t.Fatalf("current revision status=%d", status)
+	}
+	if status := approve(`{"expected_revision":2}`); status != http.StatusConflict {
+		t.Fatalf("duplicate approval status=%d", status)
+	}
+	if repo.item.Status != "approved" || repo.item.Revision != 3 {
+		t.Fatalf("approval state=%#v", repo.item)
+	}
 }
 
 func TestSessionReportHTTPRequiresAuthAndClinicalReadAccess(t *testing.T) {

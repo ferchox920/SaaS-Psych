@@ -114,7 +114,7 @@ func (r *SessionReportRepository) Update(ctx context.Context, tenantID, reportID
 	}
 	return out, nil
 }
-func (r *SessionReportRepository) Approve(ctx context.Context, tenantID, reportID, actorID uuid.UUID) (sessionreport.Report, error) {
+func (r *SessionReportRepository) Approve(ctx context.Context, tenantID, reportID, actorID uuid.UUID, expectedRevision int) (sessionreport.Report, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return sessionreport.Report{}, err
@@ -127,7 +127,7 @@ func (r *SessionReportRepository) Approve(ctx context.Context, tenantID, reportI
 	if err != nil {
 		return sessionreport.Report{}, err
 	}
-	if current.Status != "draft" {
+	if current.Status != "draft" || current.Revision != expectedRevision {
 		return sessionreport.Report{}, domainerrors.ErrConflict
 	}
 	if err := lockSessionReports(ctx, tx, tenantID, current.ClinicalSessionID); err != nil {
@@ -137,7 +137,7 @@ func (r *SessionReportRepository) Approve(ctx context.Context, tenantID, reportI
 	if _, err := tx.Exec(ctx, `UPDATE session_reports SET status='superseded',updated_at=$3 WHERE tenant_id=$1 AND clinical_session_id=$2 AND status='approved'`, tenantID, current.ClinicalSessionID, now); err != nil {
 		return sessionreport.Report{}, err
 	}
-	out, err := scanSessionReport(tx.QueryRow(ctx, `UPDATE session_reports SET status='approved',approved_by_user_id=$3,approved_at=$4,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='draft' RETURNING id,tenant_id,clinical_session_id,version,revision,schema_version,status,report_json,created_by_user_id,source_ai_run_id,approved_by_user_id,approved_at,created_at,updated_at`, tenantID, reportID, actorID, now))
+	out, err := scanSessionReport(tx.QueryRow(ctx, `UPDATE session_reports SET status='approved',revision=revision+1,approved_by_user_id=$3,approved_at=$4,updated_at=$4 WHERE tenant_id=$1 AND id=$2 AND status='draft' AND revision=$5 RETURNING id,tenant_id,clinical_session_id,version,revision,schema_version,status,report_json,created_by_user_id,source_ai_run_id,approved_by_user_id,approved_at,created_at,updated_at`, tenantID, reportID, actorID, now, expectedRevision))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return sessionreport.Report{}, domainerrors.ErrConflict
 	}

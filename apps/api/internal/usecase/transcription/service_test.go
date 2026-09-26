@@ -60,7 +60,7 @@ func TestTranscribeAuditsMetricsWithoutAudioOrText(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(auditor.metadata)
-	if string(encoded) == "" || contains(string(encoded), "fictitious-audio") || contains(string(encoded), "Texto ficticio") {
+	if len(encoded) == 0 || contains(string(encoded), "fictitious-audio") || contains(string(encoded), "Texto ficticio") {
 		t.Fatalf("audit must not contain audio or transcript: %s", encoded)
 	}
 }

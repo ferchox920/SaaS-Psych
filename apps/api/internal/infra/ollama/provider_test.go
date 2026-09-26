@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	clinicalanalysis "sessionflow/apps/api/internal/usecase/clinicalanalysis"
 	longitudinal "sessionflow/apps/api/internal/usecase/longitudinal"
 	sessionreport "sessionflow/apps/api/internal/usecase/sessionreport"
@@ -124,6 +125,40 @@ func TestInterpretLongitudinalUsesIndependentStrictSchema(t *testing.T) {
 	}
 	if _, ok := captured["format"].(map[string]any); !ok {
 		t.Fatalf("longitudinal generation must carry its strict schema: %#v", captured)
+	}
+}
+
+func TestBuildGIRAUsesDedicatedDeterministicProfileAndOneRepair(t *testing.T) {
+	calls := 0
+	var captured map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Fatal(err)
+		}
+		content := "not-json"
+		if calls == 2 {
+			content = `{"targets":[],"goals":[],"indicators":[],"rationales":[],"gira":null,"phases":[],"indicator_links":[],"uncertainties":[{"type":"insufficient_evidence","question":"Falta evidencia.","evidence_refs":[]}]}`
+		}
+		encoded, _ := json.Marshal(map[string]any{"message": map[string]string{"content": content}, "done": true})
+		_, _ = w.Write(append(encoded, '\n'))
+	}))
+	defer server.Close()
+	config := testConfig(server.URL)
+	config.GIRAContextTokens, config.GIRAMaxOutputTokens = 8192, 1536
+	config.GIRATemperature, config.GIRATopP, config.GIRATopK, config.GIRASeed = 0, 0.8, 20, 42
+	provider, _ := NewProvider(config)
+	snapshot := longitudinal.GIRABuilderInput{SchemaVersion: longitudinal.GIRAPromptVersion, SelectedProcess: longitudinal.Process{ID: uuid.New(), ApprovalStatus: "approved", ClinicalStatus: "active", Version: 1}, CurrentStrategy: longitudinal.TherapeuticStrategy{Targets: []longitudinal.Target{}, Goals: []longitudinal.Goal{}, Rationales: []longitudinal.TherapeuticRationale{}, GIRAs: []longitudinal.GIRA{}}, ApproachRegistry: []longitudinal.ApproachDefinition{}, TechniqueRegistry: []longitudinal.TechniqueDefinition{}}
+	out, err := provider.BuildGIRA(context.Background(), longitudinal.GIRASystemPromptV1(), longitudinal.NewGIRAProviderRequest(longitudinal.BuildGIRAGenerationRequest(snapshot)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !out.Metrics.Repaired || out.Metrics.RepairReason == "" {
+		t.Fatalf("calls=%d metrics=%+v", calls, out.Metrics)
+	}
+	options := captured["options"].(map[string]any)
+	if options["num_ctx"] != float64(8192) || options["num_predict"] != float64(1536) || options["top_p"] != 0.8 || options["top_k"] != float64(20) || options["seed"] != float64(42) || captured["think"] != false {
+		t.Fatalf("GIRA options=%#v think=%#v", options, captured["think"])
 	}
 }
 

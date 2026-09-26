@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BrainCircuit, Check, Clock3, Mic, Pause, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { validateAudioFile } from "@/features/clinical-analysis/lib/audio-file";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,9 @@ export function ClinicalWorkspace() {
 	const recorderRef = useRef<MediaRecorder | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);
 	const chunksRef = useRef<Blob[]>([]);
+  const audioFileRef = useRef<HTMLInputElement | null>(null);
+  const [audioFileName, setAudioFileName] = useState("");
+  const [audioFileError, setAudioFileError] = useState<string | null>(null);
   const [range] = useState(clinicalRange);
   const [clientId, setClientId] = useState("");
   const [appointmentId, setAppointmentId] = useState("");
@@ -178,12 +182,14 @@ export function ClinicalWorkspace() {
 	};
 	const discardRecording = () => {
 		transcriptionAbortRef.current?.abort();
+		setAudioFileName("");
+		setAudioFileError(null);
 		setRecordedAudio(null);
 		setRecordingState("idle");
 		setRecordingSeconds(0);
 	};
 	const transcribeRecording = async () => {
-		if (!recordedAudio || !appointmentId) return;
+		if (!recordedAudio || !appointmentId || !audioConsent || !transcriptionAvailable || isAnalyzing) return;
 		const controller = new AbortController();
 		transcriptionAbortRef.current = controller;
 		setRecordingState("transcribing");
@@ -200,6 +206,7 @@ export function ClinicalWorkspace() {
 			setRecordedAudio(null);
 			setRecordingState("idle");
 		} finally {
+			setAudioFileName("");
 			transcriptionAbortRef.current = null;
 		}
 	};
@@ -251,7 +258,7 @@ export function ClinicalWorkspace() {
         <Badge variant="outline">Supervisor local</Badge>
         <h2 className="text-3xl font-semibold">Bloc clínico de microprocesos</h2>
         <p className="max-w-3xl text-muted-foreground">
-          Segunda capa de análisis con Qwen en Ollama. Fernando conserva el juicio clínico; ninguna sugerencia se incorpora automáticamente al registro.
+          Segunda capa de análisis local. El profesional conserva el juicio clínico; ninguna sugerencia se incorpora automáticamente al registro.
         </p>
       </header>
 
@@ -259,14 +266,14 @@ export function ClinicalWorkspace() {
         <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_1fr_auto] md:items-end">
           <div className="space-y-2">
             <Label htmlFor="clinical-client">Paciente</Label>
-            <select id="clinical-client" className="h-11 w-full rounded-xl border bg-background px-3" value={clientId} onChange={(event) => { setClientId(event.target.value); setAppointmentId(""); }}>
+            <select id="clinical-client" className="h-11 w-full rounded-xl border bg-background px-3" value={clientId} disabled={recordingState !== "idle" || isAnalyzing} onChange={(event) => { setClientId(event.target.value); setAppointmentId(""); }}>
               <option value="">Selecciona un paciente</option>
               {clients.map((client) => <option key={client.id} value={client.id}>{client.fullname}</option>)}
             </select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="clinical-appointment">Sesión</Label>
-            <select id="clinical-appointment" className="h-11 w-full rounded-xl border bg-background px-3" value={appointmentId} onChange={(event) => setAppointmentId(event.target.value)} disabled={!clientId}>
+            <select id="clinical-appointment" className="h-11 w-full rounded-xl border bg-background px-3" value={appointmentId} onChange={(event) => setAppointmentId(event.target.value)} disabled={!clientId || recordingState !== "idle" || isAnalyzing}>
               <option value="">Selecciona una sesión</option>
               {appointments.map((appointment) => <option key={appointment.id} value={appointment.id}>{new Date(appointment.starts_at).toLocaleString()} · {appointment.status}</option>)}
             </select>
@@ -292,15 +299,34 @@ export function ClinicalWorkspace() {
             <Textarea aria-label="Fragmento clínico" className="min-h-[420px] resize-y text-base leading-7" value={fragment} onChange={(event) => setFragment(event.target.value)} placeholder="Paciente: …\nTerapeuta: …" disabled={isAnalyzing} />
 			<div className="space-y-3 rounded-2xl border bg-muted/20 p-4">
 				<div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-medium">Transcripción efímera local</p><p className="text-xs text-muted-foreground">{transcriptionAvailable ? `${transcriptionStatusQuery.data?.engine} · ${transcriptionStatusQuery.data?.model} · ${transcriptionStatusQuery.data?.device}/${transcriptionStatusQuery.data?.compute_type}` : transcriptionStatusQuery.data?.enabled ? "Transcriptor local sin conexión" : "Audio deshabilitado por configuración"}</p></div>{recordingState === "recording" || recordingState === "paused" ? <Badge className="animate-pulse bg-red-600 text-white">● GRABANDO · {recordingSeconds}s</Badge> : null}</div>
-				<label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={audioConsent} onChange={(event) => setAudioConsent(event.target.checked)} disabled={recordingState !== "idle"} /><span>Confirmo que inicié la captura explícitamente y que cuento con el consentimiento clínico aplicable. El audio no se conservará.</span></label>
+				<label className="flex items-start gap-2 text-sm"><input className="mt-1" type="checkbox" checked={audioConsent} onChange={(event) => setAudioConsent(event.target.checked)} disabled={recordingState !== "idle"} /><span>Confirmo que cuento con el consentimiento aplicable para grabar o cargar este audio y transcribirlo localmente. Esta confirmación no sustituye los consentimientos registrados del paciente. El archivo original de tu dispositivo no se modifica.</span></label>
+                <input ref={audioFileRef} type="file" className="sr-only" aria-label="Archivo de grabación" accept=".m4a,.mp4,.wav,.webm,.ogg,audio/mp4,audio/x-m4a,audio/wav,audio/webm,audio/ogg" disabled={!audioConsent || !appointmentId || recordingState !== "idle" || isAnalyzing} onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file || !audioConsent || !appointmentId || recordingState !== "idle" || isAnalyzing) return;
+                  setAudioFileError(null);
+                  try {
+                    const mime = validateAudioFile(file);
+                    setRecordedAudio(file.slice(0, file.size, mime));
+                    setAudioFileName(file.name);
+                    setRecordingSeconds(0);
+                    setRecordingState("ready");
+                  } catch (error) {
+                    setAudioFileError(error instanceof Error ? error.message : "No se pudo cargar el archivo.");
+                  }
+                }} />
+                {audioFileError ? <p role="alert" className="text-sm text-destructive">{audioFileError}</p> : null}
+                {audioFileName && recordedAudio ? <p role="status" className="break-all text-sm">{audioFileName} · {(recordedAudio.size / 1024 / 1024).toFixed(2)} MiB · Solo en memoria del navegador</p> : null}
+                <p className="text-xs text-muted-foreground">M4A, MP4, WAV, WebM u OGG · Máximo 100 MiB. Seleccionar el archivo no lo envía ni inicia la transcripción.</p>
 				<div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={!audioConsent || !appointmentId || recordingState !== "idle" || isAnalyzing} onClick={() => audioFileRef.current?.click()}>Agregar archivo</Button>
 					{recordingState === "idle" ? <Button size="sm" variant="outline" disabled={!audioConsent || !appointmentId || !transcriptionAvailable} onClick={() => void startRecording()}><Mic className="size-4" /> Iniciar grabación</Button> : null}
 					{recordingState === "recording" ? <><Button size="sm" variant="outline" onClick={pauseRecording}><Pause className="size-4" /> Pausar</Button><Button size="sm" variant="destructive" onClick={stopRecording}><Square className="size-4" /> Finalizar fragmento</Button></> : null}
 					{recordingState === "paused" ? <><Button size="sm" variant="outline" onClick={resumeRecording}><Play className="size-4" /> Continuar</Button><Button size="sm" variant="destructive" onClick={stopRecording}><Square className="size-4" /> Finalizar fragmento</Button></> : null}
-					{recordingState === "ready" ? <><Button size="sm" onClick={() => void transcribeRecording()}><Mic className="size-4" /> Transcribir localmente</Button><Button size="sm" variant="outline" onClick={discardRecording}><Trash2 className="size-4" /> Descartar audio</Button></> : null}
+					{recordingState === "ready" ? <><Button size="sm" disabled={!audioConsent || !transcriptionAvailable || isAnalyzing} onClick={() => void transcribeRecording()}><Mic className="size-4" /> Transcribir localmente</Button><Button size="sm" variant="outline" onClick={discardRecording}><Trash2 className="size-4" /> Descartar audio</Button></> : null}
 					{recordingState === "transcribing" ? <Button size="sm" variant="destructive" onClick={discardRecording}><Square className="size-4" /> Cancelar y eliminar audio</Button> : null}
 				</div>
-				{recordingState === "ready" ? <p className="text-xs text-amber-700">Audio en memoria pendiente de transcripción. Para mejor precisión, usa fragmentos de 8–30 segundos; el sistema corta automáticamente a los 30 s. No se enviará a Qwen.</p> : null}
+				{recordingState === "ready" ? <p className="text-xs text-amber-700">Audio en memoria pendiente de transcripción local. El corte de 30 segundos solo aplica al micrófono, no al archivo cargado. Una consulta larga puede exceder el tiempo del servicio efímero; no se garantiza su transcripción completa por esta vía. No se enviará a Qwen. La transcripción reemplazará el texto del fragmento actual.</p> : null}
 			</div>
             <div className="flex flex-wrap items-center gap-3">
               <Button disabled={!appointmentId || !fragment.trim() || isAnalyzing || !statusQuery.data?.available} onClick={() => void startAnalysis()}>
@@ -309,7 +335,7 @@ export function ClinicalWorkspace() {
               {isAnalyzing ? <Button variant="destructive" onClick={() => abortRef.current?.abort()}><Square className="size-4" /> Cancelar</Button> : null}
               <span className="text-sm text-muted-foreground">{progress}</span>
             </div>
-            <p className="text-xs text-muted-foreground">El texto viaja del navegador al backend de SessionFlow y de allí a Ollama en loopback. No se usa una API externa.</p>
+            <p className="text-xs text-muted-foreground">El texto se procesa mediante el modelo local configurado para esta instalación. No se envía a una API externa.</p>
           </CardContent>
         </Card>
 

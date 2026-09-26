@@ -77,6 +77,9 @@ func TestClinicalLongitudinalHumanMergePostgresIntegration(t *testing.T) {
 	if state.StateVersion != 1 || len(state.Processes) != 1 || len(state.ActiveEvidence) != 1 || len(state.RecentEvents) != 1 || len(state.Processes[0].Hypotheses) != 1 {
 		t.Fatalf("state=%#v", state)
 	}
+	if len(state.RecentEvents[0].Evidence) != 1 || state.RecentEvents[0].Evidence[0].ID != evidenceID || len(state.Processes[0].Events) != 1 || len(state.Processes[0].Events[0].Evidence) != 1 || state.Processes[0].Events[0].Evidence[0].ID != evidenceID || len(state.Processes[0].Hypotheses[0].SupportingEvidence) != 1 || state.Processes[0].Hypotheses[0].SupportingEvidence[0].ID != evidenceID {
+		t.Fatalf("batched associations lost event/hypothesis evidence: %#v", state)
+	}
 	again, err := repo.Merge(ctx, longitudinal.MergeInput{TenantID: tenant, DiffID: diff.ID, ActorID: user, ExpectedDiffRevision: diff.Revision})
 	if err != nil || again.Status != "merged" {
 		t.Fatalf("idempotent merge=%#v err=%v", again, err)

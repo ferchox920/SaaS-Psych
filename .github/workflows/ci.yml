@@ -28,6 +28,9 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
       - name: Unit and package tests
         run: go test ./...
 
@@ -111,4 +114,60 @@ jobs:
         run: migrate -path migrations -database "$DATABASE_URL" up
 
       - name: Run integration tests
-        run: go test -count=1 ./internal/http ./internal/infra/db
+        run: go test -count=1 ./...
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Check local Compose ports
+        run: node tools/check-compose-ports.mjs
+
+      - name: Install dependencies from lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm --filter web lint
+
+      - name: TypeScript
+        run: pnpm --filter web typecheck
+
+      - name: Production build
+        run: pnpm --filter web build
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Functional browser tests
+        run: pnpm --filter web test
+
+  transcription-python:
+    name: Transcription Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/transcription/requirements.txt
+
+      - name: Install pinned dependencies
+        run: python -m pip install --requirement tools/transcription/requirements.txt
+
+      - name: Test transcriber contracts without a model download
+        run: python -m unittest discover -s tools/transcription -p 'test_*.py' -v

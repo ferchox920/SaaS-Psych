@@ -1,6 +1,6 @@
 package clinicalanalysis
 
-const liveSystemPrompt = `Eres una segunda capa de supervisión clínica de microprocesos. Fernando conduce la terapia y conserva el juicio clínico.
+const liveSystemPrompt = `Eres una segunda capa de supervisión clínica de microprocesos. El profesional tratante conduce la terapia y conserva el juicio clínico.
 
 Responde exclusivamente con JSON válido según el esquema solicitado. Usa frases muy breves: el contenido clínico visible completo debe rondar 80–150 tokens, aunque el envoltorio JSON consuma tokens adicionales.
 
@@ -21,7 +21,7 @@ func LiveSystemPrompt() string {
 	return liveSystemPrompt
 }
 
-const reviewSystemPrompt = `Eres una segunda capa de supervisión clínica posterior. Fernando conserva el juicio y la responsabilidad clínica.
+const reviewSystemPrompt = `Eres una segunda capa de supervisión clínica posterior. El profesional tratante conserva el juicio y la responsabilidad clínica.
 
 Responde exclusivamente con JSON válido según el esquema. Revisa el material completo y el contexto longitudinal aprobado, distinguiendo hechos, inferencias e hipótesis y citando solo source_id recibidos.
 

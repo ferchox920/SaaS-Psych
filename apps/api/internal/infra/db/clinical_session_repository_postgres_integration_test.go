@@ -36,7 +36,9 @@ func TestClinicalSessionTenantAndLifecyclePostgresIntegration(t *testing.T) {
 	if _, err := repo.GetByID(ctx, otherTenant, created.ID); err == nil {
 		t.Fatal("cross-tenant read must fail")
 	}
-	created.Complete(now)
+	if err := created.Complete(now); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := repo.Transition(ctx, created, user); err != nil {
 		t.Fatal(err)
 	}

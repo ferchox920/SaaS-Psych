@@ -21,6 +21,7 @@ type Entity struct {
 	StartsAt  time.Time
 	EndsAt    time.Time
 	Status    string
+	Revision  int64
 	Location  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -48,6 +49,7 @@ func NewEntity(tenantID, clientID uuid.UUID, startsAt, endsAt time.Time, locatio
 		StartsAt:  startsAt.UTC(),
 		EndsAt:    endsAt.UTC(),
 		Status:    StatusScheduled,
+		Revision:  1,
 		Location:  strings.TrimSpace(location),
 		CreatedAt: now,
 		UpdatedAt: now,

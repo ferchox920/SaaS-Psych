@@ -1,17 +1,17 @@
 import argparse
+import hashlib
+import io
+import importlib.metadata
 import json
 import os
-import tempfile
+import uuid
 import threading
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from faster_whisper import WhisperModel
-
-
-MAX_AUDIO_BYTES = 25 * 1024 * 1024
+MAX_AUDIO_BYTES = 100 * 1024 * 1024
 ALLOWED_FORMATS = {"wav", "webm", "ogg", "mp4", "m4a"}
 
 
@@ -26,6 +26,10 @@ class TranscriptionRuntime:
         beam_size: int = 1,
         initial_prompt: str = "Transcripción literal de psicoterapia en español rioplatense, sin resumir ni interpretar.",
     ) -> None:
+        # Import the optional engine only when constructing the real runtime. This
+        # keeps contract tests deterministic and independent of model/runtime wheels.
+        from faster_whisper import WhisperModel
+
         if not model_path.is_dir():
             raise RuntimeError("configured local transcription model path does not exist")
         temp_dir.mkdir(parents=True, exist_ok=True)
@@ -36,6 +40,16 @@ class TranscriptionRuntime:
         self.cpu_threads = cpu_threads
         self.beam_size = beam_size
         self.initial_prompt = initial_prompt
+        self.engine_version = importlib.metadata.version("faster-whisper")
+        self.configuration_hash = hashlib.sha256(json.dumps({
+            "contract": "local-transcription-v1", "model": model_path.name,
+            "engine_version": self.engine_version, "device": device,
+            "compute_type": compute_type, "cpu_threads": cpu_threads,
+            "beam_size": beam_size, "initial_prompt": initial_prompt,
+            "language": "es", "vad_filter": True,
+            "vad_parameters": {"min_silence_duration_ms": 500, "speech_pad_ms": 250},
+            "condition_on_previous_text": False,
+        }, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
         self.lock = threading.Lock()
         self.model = WhisperModel(
             str(model_path),
@@ -46,17 +60,13 @@ class TranscriptionRuntime:
             local_files_only=True,
         )
 
-    def transcribe(self, audio: bytes, audio_format: str) -> dict:
+    def transcribe(self, audio: bytes, audio_format: str, durable: bool = False) -> dict:
         if not self.lock.acquire(blocking=False):
             raise BusyError()
-        temp_path: Path | None = None
         try:
-            with tempfile.NamedTemporaryFile(dir=self.temp_dir, suffix=f".{audio_format}", delete=False) as temporary:
-                temporary.write(audio)
-                temp_path = Path(temporary.name)
             started = time.perf_counter()
             segments, info = self.model.transcribe(
-                str(temp_path),
+                io.BytesIO(audio),
                 language="es",
                 beam_size=self.beam_size,
                 vad_filter=True,
@@ -64,8 +74,19 @@ class TranscriptionRuntime:
                 condition_on_previous_text=False,
                 initial_prompt=self.initial_prompt,
             )
-            text = " ".join(segment.text.strip() for segment in segments).strip()
+            collected = [{"start": segment.start, "end": segment.end, "text": segment.text.strip()}
+                         for segment in segments if segment.text.strip()]
+            text = " ".join(segment["text"] for segment in collected).strip()
             elapsed = time.perf_counter() - started
+            if durable:
+                return {
+                    "text": text, "segments": collected, "language": info.language,
+                    "engine": "faster-whisper", "model": self.model_path.name,
+                    "engine_version": self.engine_version,
+                    "configuration_hash": self.configuration_hash,
+                    "duration_seconds": round(info.duration, 3),
+                    "processing_seconds": round(elapsed, 3),
+                }
             return {
                 "text": text,
                 "language": info.language,
@@ -76,8 +97,6 @@ class TranscriptionRuntime:
                 "model": self.model_path.name,
             }
         finally:
-            if temp_path is not None:
-                temp_path.unlink(missing_ok=True)
             self.lock.release()
 
 
@@ -115,12 +134,26 @@ class Handler(BaseHTTPRequestHandler):
             "device": self.runtime.device,
             "compute_type": self.runtime.compute_type,
             "beam_size": self.runtime.beam_size,
+            "contract": "local-transcription-v1",
+            "engine_version": self.runtime.engine_version,
+            "configuration_hash": self.runtime.configuration_hash,
         })
 
     def do_POST(self) -> None:
-        if self.path != "/transcribe":
+        durable = self.path == "/v1/transcriptions"
+        if self.path not in {"/transcribe", "/v1/transcriptions"}:
             self.send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
+        request_id = self.headers.get("X-Request-ID", "")
+        if durable:
+            try:
+                valid_id = str(uuid.UUID(request_id)) == request_id and uuid.UUID(request_id).int != 0
+            except ValueError:
+                valid_id = False
+            if (not valid_id or self.headers.get("X-Language") != "es"
+                    or self.headers.get("X-Configuration-Hash") != self.runtime.configuration_hash):
+                self.send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_provenance"})
+                return
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -130,8 +163,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": "invalid_audio"})
             return
         audio = self.rfile.read(length)
+        if len(audio) != length:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"error": "incomplete_audio"})
+            return
         try:
-            result = self.runtime.transcribe(audio, audio_format)
+            result = self.runtime.transcribe(audio, audio_format, durable=durable)
+            if durable:
+                result = {"contract": "local-transcription-v1", "request_id": request_id, "content": result}
             self.send_json(HTTPStatus.OK, result)
         except BusyError:
             self.send_json(HTTPStatus.CONFLICT, {"error": "busy"})

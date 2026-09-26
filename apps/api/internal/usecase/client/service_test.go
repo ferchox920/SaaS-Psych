@@ -22,6 +22,35 @@ type fakeRepository struct {
 	restoreFn      func(ctx context.Context, tenantID, clientID, actorUserID uuid.UUID, restoredAt time.Time) error
 }
 
+type visibleClientRepository struct {
+	fakeRepository
+	visible []domainclient.Entity
+	calls   int
+}
+
+func (r *visibleClientRepository) ListVisible(_ context.Context, _, _ uuid.UUID, _ bool) ([]domainclient.Entity, error) {
+	r.calls++
+	return r.visible, nil
+}
+
+type noPerClientAccess struct{ calls int }
+
+func (a *noPerClientAccess) CanAccessClient(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, ...string) (bool, error) {
+	a.calls++
+	return true, nil
+}
+
+func TestVisibleClientListUsesSingleAuthorizedRepositoryRead(t *testing.T) {
+	tenant, viewer := uuid.New(), uuid.New()
+	repo := &visibleClientRepository{visible: []domainclient.Entity{{ID: uuid.New(), TenantID: tenant}}}
+	access := &noPerClientAccess{}
+	svc := NewService(repo, nil).WithClinicalAccess(access)
+	items, err := svc.List(context.Background(), tenant, viewer)
+	if err != nil || len(items) != 1 || repo.calls != 1 || access.calls != 0 {
+		t.Fatalf("items=%#v err=%v list_calls=%d access_calls=%d", items, err, repo.calls, access.calls)
+	}
+}
+
 type fakeAuditor struct {
 	actions []string
 	err     error

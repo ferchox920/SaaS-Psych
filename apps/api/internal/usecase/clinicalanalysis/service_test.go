@@ -23,6 +23,25 @@ type testProvider struct {
 	before func()
 }
 
+func TestLiveAnalysisRejectsOversizedAdjacentClinicalText(t *testing.T) {
+	base := AnalyzeLiveInput{TenantID: uuid.New(), ActorUserID: uuid.New(), AppointmentID: uuid.New(), Request: LiveRequest{Fragment: "Fragmento ficticio"}}
+	for _, tc := range []struct {
+		name string
+		edit func(*AnalyzeLiveInput)
+	}{
+		{"previous intervention", func(input *AnalyzeLiveInput) { input.Request.PreviousIntervention = strings.Repeat("a", 2001) }},
+		{"patient response", func(input *AnalyzeLiveInput) { input.Request.PatientResponse = strings.Repeat("a", 2001) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := base
+			tc.edit(&input)
+			if err := validateAnalyzeInput(input); !errors.Is(err, domainerrors.ErrValidation) {
+				t.Fatalf("oversized text err=%v", err)
+			}
+		})
+	}
+}
+
 func (p testProvider) Health(context.Context) (ProviderStatus, error) {
 	return ProviderStatus{Available: true}, nil
 }
@@ -282,7 +301,7 @@ func TestAnalyzeLiveAuditsWithoutClinicalContent(t *testing.T) {
 	}
 	for _, call := range auditor.calls {
 		encoded, _ := json.Marshal(call.metadata)
-		if string(encoded) == "" || containsClinicalText(string(encoded), "Paciente ficticio") {
+		if len(encoded) == 0 || containsClinicalText(string(encoded), "Paciente ficticio") {
 			t.Fatalf("audit metadata must not contain fragment: %s", encoded)
 		}
 	}

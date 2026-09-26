@@ -309,7 +309,7 @@ func TestAuditRepositoryTenantIsolationPostgresIntegration(t *testing.T) {
 func postgresIntegrationDatabaseURL() string {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		return "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+		return "postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable"
 	}
 	return databaseURL
 }

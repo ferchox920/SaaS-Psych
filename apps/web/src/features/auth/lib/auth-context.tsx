@@ -42,7 +42,7 @@ type AuthContextValue = {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: Readonly<{ children: React.ReactNode }>) {
+export function AuthProvider({ children, demoCredentials }: Readonly<{ children: React.ReactNode; demoCredentials?: LoginFormValues }>) {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<AuthSession | null>(null);
   const [status, setStatus] = useState<SessionStatus>("loading");
@@ -51,19 +51,18 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   const [isSigningOut, setIsSigningOut] = useState(false);
   const refreshInFlightRef = useRef<Promise<AuthSession> | null>(null);
   const bootstrappedRef = useRef(false);
+  const authGenerationRef = useRef(0);
+  const sessionRef = useRef<AuthSession | null>(null);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: {
-      tenantId: "11111111-1111-1111-1111-111111111111",
-      email: "owner@tenant-a.local",
-      password: "ChangeMe123!",
-    },
+    defaultValues: demoCredentials ?? { tenantId: "", email: "", password: "" },
   });
 
   const persistSession = async (
     tenantId: string,
     tokens: LoginResponse,
+    generation: number,
     previousRole?: AuthSession["role"],
   ): Promise<AuthSession> => {
     const me = await fetchMe({
@@ -80,7 +79,12 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       role: me.role ?? previousRole ?? "member",
     };
 
+    if (generation !== authGenerationRef.current) {
+      throw new Error("Session changed");
+    }
+
     setStoredTenantId(tenantId);
+    sessionRef.current = nextSession;
     setSession(nextSession);
     setStatus("authenticated");
     setFeedback(null);
@@ -89,10 +93,11 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   };
 
   const signIn = async (values: LoginFormValues) => {
+    const generation = ++authGenerationRef.current;
     try {
       setFeedback(null);
       const tokens = await login(values);
-      const nextSession = await persistSession(values.tenantId, tokens);
+      const nextSession = await persistSession(values.tenantId, tokens, generation);
       toast.success("Sesion iniciada.");
       return nextSession;
     } catch (error) {
@@ -104,6 +109,7 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
 
   const clearLocalSession = useCallback((nextStatus: SessionStatus, nextFeedback: SessionFeedback) => {
     clearStoredTenantId();
+    sessionRef.current = null;
     setSession(null);
     setStatus(nextStatus);
     setFeedback(nextFeedback);
@@ -111,63 +117,59 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
   }, [queryClient]);
 
   const signOut = useCallback(async (reason: SignOutReason = "user") => {
+    ++authGenerationRef.current;
+    refreshInFlightRef.current = null;
     setIsSigningOut(true);
 
-    if (session) {
+    const currentSession = session;
+    if (reason === "user") {
+      toast.success("Sesion cerrada.");
+      clearLocalSession("anonymous", { kind: "success", message: "Sesion cerrada correctamente." });
+    } else if (reason === "unauthorized") {
+      toast.error("No tienes permisos para esa seccion.");
+      clearLocalSession("anonymous", { kind: "error", message: "Tu rol no tiene permisos para acceder a esa seccion." });
+    } else {
+      toast.error("Tu sesion vencio. Inicia sesion nuevamente.");
+      clearLocalSession("expired", { kind: "info", message: "Tu sesion expiro. Vuelve a iniciar sesion." });
+    }
+
+    if (currentSession) {
       try {
-        await logout(session.tenantId);
+        await logout(currentSession.tenantId);
       } catch {
         // Best effort logout. Local state still must be cleared.
       }
     }
 
-    try {
-      if (reason === "user") {
-        toast.success("Sesion cerrada.");
-        clearLocalSession("anonymous", {
-          kind: "success",
-          message: "Sesion cerrada correctamente.",
-        });
-        return;
-      }
-
-      if (reason === "unauthorized") {
-        toast.error("No tienes permisos para esa seccion.");
-        clearLocalSession("anonymous", {
-          kind: "error",
-          message: "Tu rol no tiene permisos para acceder a esa seccion.",
-        });
-        return;
-      }
-
-      toast.error("Tu sesion vencio. Inicia sesion nuevamente.");
-      clearLocalSession("expired", {
-        kind: "info",
-        message: "Tu sesion expiro. Vuelve a iniciar sesion.",
-      });
-    } finally {
-      setIsSigningOut(false);
-    }
+    setIsSigningOut(false);
   }, [clearLocalSession, session]);
 
   const refreshSession = useCallback(async (currentSession: AuthSession) => {
+    if (sessionRef.current !== currentSession) {
+      throw new Error("Session changed");
+    }
     if (refreshInFlightRef.current) {
       return refreshInFlightRef.current;
     }
 
+    const generation = authGenerationRef.current;
     const refreshPromise = (async () => {
       setIsRefreshing(true);
       setStatus("refreshing");
 
       try {
         const refreshed = await refreshTokens(currentSession.tenantId);
-        return await persistSession(currentSession.tenantId, refreshed, currentSession.role);
+        return await persistSession(currentSession.tenantId, refreshed, generation, currentSession.role);
       } catch {
-        await signOut("expired");
+        if (generation === authGenerationRef.current) {
+          await signOut("expired");
+        }
         throw new Error("Session expired");
       } finally {
-        refreshInFlightRef.current = null;
-        setIsRefreshing(false);
+        if (generation === authGenerationRef.current) {
+          refreshInFlightRef.current = null;
+          setIsRefreshing(false);
+        }
       }
     })();
 
@@ -186,12 +188,16 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
       return;
     }
 
+    const generation = authGenerationRef.current;
     void refreshTokens(tenantId)
-      .then((tokens) => persistSession(tenantId, tokens))
+      .then((tokens) => persistSession(tenantId, tokens, generation))
       .catch(() => {
-        clearStoredTenantId();
-        setSession(null);
-        setStatus("anonymous");
+        if (generation === authGenerationRef.current) {
+          clearStoredTenantId();
+          sessionRef.current = null;
+          setSession(null);
+          setStatus("anonymous");
+        }
       });
   }, []);
 
@@ -201,7 +207,9 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
     }
 
     const timeoutId = window.setTimeout(() => {
-      void refreshSession(session);
+      void refreshSession(session).catch(() => {
+        // Expiration already updates auth state; timer failures are not unhandled promises.
+      });
     }, getRefreshDelay(session));
 
     return () => {
@@ -227,7 +235,14 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
         throw error;
       }
 
+      if (sessionRef.current !== activeSession) {
+        throw new Error("Session changed");
+      }
+
       const nextSession = await refreshSession(activeSession);
+      if (sessionRef.current !== nextSession) {
+        throw new Error("Session changed");
+      }
       return request(nextSession);
     }
   };

@@ -212,6 +212,17 @@ func TestClientsTenantIsolationIntegration(t *testing.T) {
 	if len(listA.Items) != 1 {
 		t.Fatalf("expected 1 client for tenantA, got %d", len(listA.Items))
 	}
+	var pageEnvelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &pageEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if string(pageEnvelope["next_offset"]) != "null" {
+		t.Fatalf("last page must expose null next_offset: %s", body)
+	}
+	status, body = doJSONRequest(t, server, "GET", "/api/v1/clients?limit=101", tenantA, accessA, nil)
+	if status != 400 {
+		t.Fatalf("invalid page limit expected 400, got %d body=%s", status, body)
+	}
 	status, body = doJSONRequest(t, server, "GET", "/api/v1/clients", tenantA, unassignedOwnerToken, nil)
 	unassignedList := struct {
 		Items []map[string]any `json:"items"`
@@ -285,7 +296,7 @@ func TestClientArchiveAndRestorePreservesIdentityIntegration(t *testing.T) {
 		t.Fatalf("archive expected 204, got %d body=%s", status, string(body))
 	}
 	status, body = doJSONRequest(t, server, "GET", "/api/v1/clients", tenantID, token, nil)
-	if status != 200 || string(body) == "" {
+	if status != 200 || len(body) == 0 {
 		t.Fatalf("active list expected 200, got %d body=%s", status, string(body))
 	}
 	active := struct {

@@ -102,9 +102,14 @@ func (r *integrationAppointmentRepo) Update(_ context.Context, in domainappointm
 	if !ok {
 		return domainappointment.Entity{}, domainerrors.ErrNotFound
 	}
-	if _, ok := items[in.ID]; !ok {
+	current, ok := items[in.ID]
+	if !ok {
 		return domainappointment.Entity{}, domainerrors.ErrNotFound
 	}
+	if current.Revision != in.Revision {
+		return domainappointment.Entity{}, domainerrors.ErrConflict
+	}
+	in.Revision++
 	items[in.ID] = in
 	return in, nil
 }
@@ -313,13 +318,14 @@ func TestCanceledAppointmentsReleaseSlotAndCannotBeModifiedIntegration(t *testin
 	}
 
 	created := struct {
-		ID string `json:"id"`
+		ID       string `json:"id"`
+		Revision int64  `json:"revision"`
 	}{}
 	if err := json.Unmarshal(body, &created); err != nil {
 		t.Fatalf("decode created appointment: %v", err)
 	}
 
-	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, nil)
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, map[string]any{"expected_revision": created.Revision})
 	if status != 200 {
 		t.Fatalf("cancel appointment expected 200, got %d body=%s", status, string(body))
 	}
@@ -344,17 +350,87 @@ func TestCanceledAppointmentsReleaseSlotAndCannotBeModifiedIntegration(t *testin
 		t.Fatalf("rebook canceled slot expected 201, got %d body=%s", status, string(body))
 	}
 
-	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]string{
-		"starts_at": base.Add(2 * time.Hour).Format(time.RFC3339),
-		"ends_at":   base.Add(3 * time.Hour).Format(time.RFC3339),
-		"location":  "Room C",
+	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]any{
+		"starts_at":         base.Add(2 * time.Hour).Format(time.RFC3339),
+		"ends_at":           base.Add(3 * time.Hour).Format(time.RFC3339),
+		"location":          "Room C",
+		"expected_revision": int64(2),
 	})
 	if status != 400 {
 		t.Fatalf("update canceled appointment expected 400, got %d body=%s", status, string(body))
 	}
 
-	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, nil)
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, map[string]any{"expected_revision": int64(2)})
 	if status != 400 {
 		t.Fatalf("second cancel expected 400, got %d body=%s", status, string(body))
+	}
+}
+
+func TestAppointmentUpdateRequiresObservedRevisionHTTP(t *testing.T) {
+	tenantID, clientID, userID := uuid.New(), uuid.New(), uuid.New()
+	repo := newIntegrationAppointmentRepo()
+	repo.seedClient(tenantID, clientID)
+	server := NewServer(ServerDeps{
+		TenantMiddleware:   httpmiddleware.RequireTenant(integrationTenantChecker{tenants: map[uuid.UUID]struct{}{tenantID: {}}}),
+		AuthMiddleware:     httpmiddleware.RequireAuth("synthetic-revision-secret"),
+		AppointmentHandler: handlers.NewAppointmentHandler(appointmentusecase.NewService(repo, nil)),
+	})
+	token, _, err := authusecase.NewTokenService("synthetic-revision-secret", 15*time.Minute).IssueAccessToken(userID, tenantID, "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)
+	status, body := doJSONRequest(t, server, "POST", "/api/v1/appointments", tenantID, token, map[string]string{
+		"client_id": clientID.String(), "starts_at": start.Format(time.RFC3339), "ends_at": start.Add(time.Hour).Format(time.RFC3339),
+	})
+	if status != 201 {
+		t.Fatalf("create: %d %s", status, body)
+	}
+	var created struct {
+		ID       string `json:"id"`
+		Revision int64  `json:"revision"`
+	}
+	if err := json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.Revision != 1 {
+		t.Fatalf("create must return revision 1, got %d", created.Revision)
+	}
+	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]any{
+		"starts_at": start.Add(2 * time.Hour).Format(time.RFC3339), "ends_at": start.Add(3 * time.Hour).Format(time.RFC3339), "expected_revision": int64(0),
+	})
+	if status != 400 {
+		t.Fatalf("missing observed revision must fail, got %d %s", status, body)
+	}
+	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]any{
+		"starts_at": start.Add(2 * time.Hour).Format(time.RFC3339), "ends_at": start.Add(3 * time.Hour).Format(time.RFC3339), "expected_revision": int64(1),
+	})
+	if status != 200 {
+		t.Fatalf("update with current revision: %d %s", status, body)
+	}
+	status, body = doJSONRequest(t, server, "PUT", "/api/v1/appointments/"+created.ID, tenantID, token, map[string]any{
+		"starts_at": start.Add(4 * time.Hour).Format(time.RFC3339), "ends_at": start.Add(5 * time.Hour).Format(time.RFC3339), "expected_revision": int64(1),
+	})
+	if status != 409 {
+		t.Fatalf("stale update must conflict, got %d %s", status, body)
+	}
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, map[string]any{"expected_revision": int64(1)})
+	if status != 409 {
+		t.Fatalf("stale cancellation must conflict, got %d %s", status, body)
+	}
+	status, body = doJSONRequest(t, server, "POST", "/api/v1/appointments/"+created.ID+"/cancel", tenantID, token, map[string]any{"expected_revision": int64(2)})
+	if status != 200 {
+		t.Fatalf("cancellation with current revision: %d %s", status, body)
+	}
+	var canceled struct {
+		Revision int64  `json:"revision"`
+		Status   string `json:"status"`
+		StartsAt string `json:"starts_at"`
+	}
+	if err := json.Unmarshal(body, &canceled); err != nil {
+		t.Fatal(err)
+	}
+	if canceled.Revision != 3 || canceled.Status != domainappointment.StatusCanceled || canceled.StartsAt != start.Add(2*time.Hour).Format(time.RFC3339) {
+		t.Fatalf("conflicting writes changed the accepted appointment: %+v", canceled)
 	}
 }

@@ -1,16 +1,21 @@
 import { AuthSession } from "@/features/auth/lib/auth-types";
 import { env } from "@/lib/config/env";
 import { apiFetch } from "@/lib/http/api-client";
+import { fetchAllPages } from "@/lib/http/fetch-all-pages";
 import { Client, ClientUpsertInput, ListEnvelope } from "@/types/api";
 
-export function listClients(session: AuthSession) {
+export function listClientPage(session: AuthSession, offset = 0) {
   return apiFetch<ListEnvelope<Client>>({
     baseUrl: env.NEXT_PUBLIC_API_URL,
     method: "GET",
-    path: "/clients",
+    path: `/clients?limit=100&offset=${offset}`,
     tenantId: session.tenantId,
     accessToken: session.accessToken,
   });
+}
+
+export function listClients(session: AuthSession) {
+  return fetchAllPages((offset) => listClientPage(session, offset));
 }
 
 export function createClient(session: AuthSession, input: ClientUpsertInput) {
@@ -47,13 +52,13 @@ export function archiveClient(session: AuthSession, clientId: string, reason: st
 }
 
 export function listArchivedClients(session: AuthSession) {
-	return apiFetch<ListEnvelope<Client>>({
+	return fetchAllPages((offset) => apiFetch<ListEnvelope<Client>>({
 		baseUrl: env.NEXT_PUBLIC_API_URL,
 		method: "GET",
-		path: "/clients/archived",
+		path: `/clients/archived?limit=100&offset=${offset}`,
 		tenantId: session.tenantId,
 		accessToken: session.accessToken,
-	});
+	}));
 }
 
 export function restoreClient(session: AuthSession, clientId: string) {

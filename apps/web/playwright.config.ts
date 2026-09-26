@@ -5,12 +5,12 @@ export default defineConfig({
   timeout: 30000,
   fullyParallel: false,
   workers: 1,
-  reporter: "list",
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
     baseURL: "http://127.0.0.1:3103",
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     screenshot: "only-on-failure",
-    trace: "off", // No clinical payload recording; tests contain synthetic fixtures only.
+    trace: "off", // Avoid retaining even fictional clinical payloads in traces.
   },
   webServer: {
     command: "pnpm start --port 3103",

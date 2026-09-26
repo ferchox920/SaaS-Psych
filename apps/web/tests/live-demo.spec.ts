@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { toDateTimeLocalValue } from "../src/features/appointments/lib/appointment-datetime";
@@ -6,6 +6,12 @@ import { toDateTimeLocalValue } from "../src/features/appointments/lib/appointme
 const tenant = "11111111-1111-1111-1111-111111111111";
 const client = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeee11";
 const screenshots = resolve(__dirname, "../../../docs/screenshots");
+
+async function expectMobileFit(page: Page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+}
 
 test.skip(process.env.RUN_LIVE_DEMO !== "1", "Requires opt-in local demo API and seeded PostgreSQL");
 
@@ -29,10 +35,12 @@ test("local demo shows real fictional data and enforces clinical assignment", as
   await expect(page.getByText("Cargando", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Sesion iniciada.")).toHaveCount(0);
   await capture("02-dashboard.png");
+  await expectMobileFit(page);
 
   await page.goto("/clients");
   await expect(page.getByRole("button", { name: /Paciente Ficticia Aurora/ }).first()).toBeVisible();
   await capture("02a-patients.png");
+  await expectMobileFit(page);
   await page.goto("/appointments");
   await expect(page.getByText("Videollamada ficticia")).toBeVisible();
   const slot = new Date();
@@ -60,6 +68,7 @@ test("local demo shows real fictional data and enforces clinical assignment", as
   await expect(page.getByRole("link", { name: "Abrir sesión clínica de esta cita" })).toHaveAttribute("href", `/clients/${client}/session?appointmentId=${appointment}`);
   await expect(page.getByText("Cita creada.", { exact: true })).toHaveCount(0);
   await capture("02b-appointments.png");
+  await expectMobileFit(page);
   await page.getByRole("link", { name: "Abrir sesión clínica de esta cita" }).click();
   await expect(page).toHaveURL(new RegExp(`/clients/${client}/session\\?appointmentId=${appointment}`));
   await expect(page.getByRole("heading", { level: 2, name: "Sesión clínica · Paciente Ficticia Aurora" })).toBeVisible();
@@ -90,9 +99,7 @@ test("local demo shows real fictional data and enforces clinical assignment", as
   await expect(draft.getByText("SIMULACIÓN:", { exact: false }).first()).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await capture("03-clinical-review.png");
-  await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expectMobileFit(page);
   await draft.getByRole("button", { name: /Aprobar reporte v\d+/ }).click();
   await draft.getByRole("button", { name: "Confirmar aprobación de reporte" }).click();
   const approved = page.locator("article").filter({ has: page.getByRole("heading", { name: /Reporte v\d+ · approved/ }) }).first();
@@ -121,6 +128,7 @@ test("local demo shows real fictional data and enforces clinical assignment", as
   await expect(page.getByText("Cambios longitudinales fusionados").first()).toBeVisible();
   await page.getByText("Detalle técnico").first().click();
   await expect(page.getByText("clinical_diff.merged", { exact: true }).first()).toBeVisible();
+  await expectMobileFit(page);
   await capture("04-audit.png");
 
   await page.getByRole("button", { name: "Cerrar sesion" }).click();

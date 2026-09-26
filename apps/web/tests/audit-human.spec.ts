@@ -20,4 +20,6 @@ test("audit explains a human merge and keeps raw provenance on demand", async ({
   await page.getByText("Detalle técnico").click();
   await expect(page.getByText(actor, { exact: true })).toBeVisible();
   await expect(page.locator("pre")).toContainText('"operation_count": 1');
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });

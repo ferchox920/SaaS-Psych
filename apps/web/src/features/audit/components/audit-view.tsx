@@ -198,7 +198,7 @@ export function AuditView() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4">
         {auditQuery.isLoading ? (
           Array.from({ length: 3 }).map((_, index) => (
             <div
@@ -217,7 +217,7 @@ export function AuditView() {
 
         {!auditQuery.isLoading && !auditQuery.isError && entries.length > 0 ? (
           entries.map((entry) => (
-            <Card key={entry.id}>
+            <Card key={entry.id} className="min-w-0">
               <CardHeader className="gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -232,7 +232,7 @@ export function AuditView() {
               </CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>{auditSummary(entry)}</p>
-                <details className="rounded-[20px] border border-border/60 bg-muted/30 p-3">
+                <details className="min-w-0 rounded-[20px] border border-border/60 bg-muted/30 p-3">
                   <summary className="cursor-pointer font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Detalle técnico</summary>
                   <dl className="mt-3 grid gap-2 break-all text-xs sm:grid-cols-[auto_1fr]">
                     <dt>Acción</dt><dd>{entry.action}</dd>
@@ -241,7 +241,7 @@ export function AuditView() {
                     <dt>Entidad</dt><dd>{entry.entity} · {entry.entity_id ?? "sin ID"}</dd>
                     <dt>Evento</dt><dd>{entry.id}</dd>
                   </dl>
-                  <pre className="mt-3 overflow-x-auto rounded-[16px] bg-muted/40 p-3 text-xs text-foreground">{JSON.stringify(entry.metadata, null, 2)}</pre>
+                  <pre className="mt-3 max-w-full overflow-x-auto rounded-[16px] bg-muted/40 p-3 text-xs text-foreground">{JSON.stringify(entry.metadata, null, 2)}</pre>
                 </details>
               </CardContent>
             </Card>

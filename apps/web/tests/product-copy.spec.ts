@@ -16,5 +16,14 @@ test("generic clinical workspace has no developer or personal copy", async ({ pa
     await page.goto(path);
     await expect(page.getByRole("button", { name: "Cerrar sesion" })).toBeVisible();
     await expect(page.locator("body")).not.toContainText(/Fernando|MVP cockpit|carpeta de feature|Professional workspace|Operation workspace/i);
+    await expect(page.locator("header details div").first()).toBeHidden();
+    await page.getByText("Detalle de cuenta").click();
+    await expect(page.locator("header details div").first()).toContainText(tenant);
+    await page.getByText("Detalle de cuenta").click();
+    if (path.startsWith("/clinical-")) {
+      const journey = page.getByRole("navigation", { name: "Recorrido clínico" });
+      await expect(journey.getByRole("link", { name: "Pacientes y revisión clínica" })).toBeVisible();
+      await expect(journey.getByRole("link", { name: "Formulación aprobada" })).toBeVisible();
+    }
   }
 });

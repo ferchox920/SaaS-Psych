@@ -17,6 +17,7 @@ async function setup(page: Page, role: "owner" | "member") {
     if (path === "/auth/me") return send({ tenant_id: tenant, user_id: "owner-user", role });
     if (path === "/clients" && req.method() === "GET") return send({ items: [{ id: client, fullname: "Paciente Ficticia Aurora", contact: "", notes_public: "", updated_at: "2026-09-01" }] });
     if (path === "/clients/archived") return send({ items: [] });
+    if (path === `/clients/${client}/assignments/users` && role === "owner") return send({ items: [{ id: user, email: "therapist@tenant-a.local" }] });
     if (path === `/clients/${client}/assignments` && role === "owner") {
       if (req.method() === "GET") return send({ items: assignments });
       const body = req.postDataJSON();
@@ -34,10 +35,10 @@ test("admin can grant an explicit clinical assignment; member cannot open manage
   await page.goto("/clients");
   await page.getByRole("button", { name: /Paciente Ficticia Aurora/ }).click();
   await expect(page.getByRole("heading", { name: "Asignaciones clínicas" })).toBeVisible();
-  await page.getByLabel("ID del profesional").fill(user);
+  await page.getByLabel("Profesional").selectOption({ label: "therapist@tenant-a.local" });
   await page.getByLabel("Relación clínica").selectOption("treating");
   await page.getByRole("button", { name: "Asignar profesional" }).click();
-  await expect(page.getByText(user)).toBeVisible();
+  await expect(page.getByText(/therapist@tenant-a.local · tratante/)).toBeVisible();
   expect(owner.assignments).toHaveLength(1);
   await page.close();
 });

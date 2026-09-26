@@ -21,6 +21,26 @@ type ClinicalAccessRepository struct {
 	now  func() time.Time
 }
 
+func (r *ClinicalAccessRepository) ListTenantUsers(ctx context.Context, tenantID uuid.UUID) ([]clinicalaccessusecase.TenantUser, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id, email FROM users WHERE tenant_id=$1 ORDER BY lower(email), id LIMIT 100`, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("list tenant users: %w", err)
+	}
+	defer rows.Close()
+	users := make([]clinicalaccessusecase.TenantUser, 0)
+	for rows.Next() {
+		var user clinicalaccessusecase.TenantUser
+		if err := rows.Scan(&user.ID, &user.Email); err != nil {
+			return nil, fmt.Errorf("scan tenant user: %w", err)
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list tenant users: %w", err)
+	}
+	return users, nil
+}
+
 func (r *ClinicalAccessRepository) CanAccessClient(
 	ctx context.Context,
 	tenantID, userID, clientID uuid.UUID,

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { listAudit } from "@/features/audit/api/audit-api";
 import { getAuditErrorMessage } from "@/features/audit/lib/audit-error-messages";
+import { auditSummary, auditTitle } from "@/features/audit/lib/audit-summary";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { AuditFilters } from "@/types/api";
 
@@ -220,20 +221,28 @@ export function AuditView() {
               <CardHeader className="gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <CardTitle className="text-base">{entry.action}</CardTitle>
-                    <Badge variant="secondary">{entry.entity}</Badge>
+                    <CardTitle className="text-base">{auditTitle(entry)}</CardTitle>
+                    <Badge variant="secondary">{entry.entity.replaceAll("_", " ")}</Badge>
                   </div>
                   <CardDescription>
-                    Actor {entry.actor_user_id ?? "system"}
-                    {entry.entity_id ? ` · Entity ${entry.entity_id}` : ""}
+                    {entry.actor_user_id ? "Acción de una persona autorizada" : "Acción del sistema"}
                   </CardDescription>
                 </div>
                 <Badge variant="outline">{new Date(entry.created_at).toLocaleString()}</Badge>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm text-muted-foreground">
-                <pre className="overflow-x-auto rounded-[20px] bg-muted/40 p-4 text-xs text-foreground">
-                  {JSON.stringify(entry.metadata, null, 2)}
-                </pre>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>{auditSummary(entry)}</p>
+                <details className="rounded-[20px] border border-border/60 bg-muted/30 p-3">
+                  <summary className="cursor-pointer font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Detalle técnico</summary>
+                  <dl className="mt-3 grid gap-2 break-all text-xs sm:grid-cols-[auto_1fr]">
+                    <dt>Acción</dt><dd>{entry.action}</dd>
+                    <dt>Actor</dt><dd>{entry.actor_user_id ?? "system"}</dd>
+                    <dt>Tenant</dt><dd>{entry.tenant_id}</dd>
+                    <dt>Entidad</dt><dd>{entry.entity} · {entry.entity_id ?? "sin ID"}</dd>
+                    <dt>Evento</dt><dd>{entry.id}</dd>
+                  </dl>
+                  <pre className="mt-3 overflow-x-auto rounded-[16px] bg-muted/40 p-3 text-xs text-foreground">{JSON.stringify(entry.metadata, null, 2)}</pre>
+                </details>
               </CardContent>
             </Card>
           ))

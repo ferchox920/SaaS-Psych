@@ -126,6 +126,7 @@ func NewServer(deps ServerDeps) *echo.Echo {
 		assignments := api.Group("/clients/:client_id/assignments", deps.TenantMiddleware, deps.AuthMiddleware, httpmiddleware.RequireRole("owner", "admin"))
 		assignments.POST("", deps.ClinicalAccessHandler.Grant)
 		assignments.GET("", deps.ClinicalAccessHandler.List)
+		assignments.GET("/users", deps.ClinicalAccessHandler.ListUsers)
 		assignments.DELETE("/:assignment_id", deps.ClinicalAccessHandler.End)
 		exceptions := api.Group("/clients/:client_id/access-exceptions", deps.TenantMiddleware, deps.AuthMiddleware, httpmiddleware.RequireRole("owner", "admin"))
 		exceptions.POST("", deps.ClinicalAccessHandler.GrantException)

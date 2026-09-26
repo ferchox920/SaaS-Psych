@@ -10,7 +10,8 @@ func JSONSchemaV1() map[string]any {
 	arr := func(max int, item map[string]any) map[string]any {
 		return map[string]any{"type": "array", "maxItems": max, "items": item}
 	}
-	refArray := arr(8, str(80))
+	refArray := arr(8, map[string]any{"type": "string", "pattern": "^(fact|change|response|affect)-[0-9]{3,6}$"})
+	refArray["uniqueItems"] = true
 	id := func(prefix string) map[string]any {
 		return map[string]any{"type": "string", "pattern": "^" + prefix + "-[0-9]{3,6}$"}
 	}

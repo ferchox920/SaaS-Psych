@@ -26,7 +26,7 @@ func NewProvider(baseURL string, timeout time.Duration) (*Provider, error) {
 	if err != nil || !isLoopback(parsed) {
 		return nil, errors.New("transcriber URL must use an explicit loopback host")
 	}
-	return &Provider{baseURL: strings.TrimRight(parsed.String(), "/"), client: &http.Client{Timeout: timeout}}, nil
+	return &Provider{baseURL: strings.TrimRight(parsed.String(), "/"), client: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("transcriber redirects are forbidden") }}}, nil
 }
 
 func (p *Provider) Health(ctx context.Context) (transcription.Status, error) {

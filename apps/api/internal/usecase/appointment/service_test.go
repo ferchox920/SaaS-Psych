@@ -21,6 +21,36 @@ type fakeRepo struct {
 	listByRangeFn   func(ctx context.Context, tenantID uuid.UUID, from, to time.Time) ([]domainappointment.Entity, error)
 }
 
+type visibleAppointmentRepository struct {
+	fakeRepo
+	visible []domainappointment.Entity
+	calls   int
+}
+
+func (r *visibleAppointmentRepository) ListVisibleByRange(_ context.Context, _, _ uuid.UUID, _, _ time.Time) ([]domainappointment.Entity, error) {
+	r.calls++
+	return r.visible, nil
+}
+
+type noPerAppointmentAccess struct{ calls int }
+
+func (a *noPerAppointmentAccess) CanAccessClient(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, ...string) (bool, error) {
+	a.calls++
+	return true, nil
+}
+
+func TestVisibleAppointmentListUsesSingleAuthorizedRepositoryRead(t *testing.T) {
+	tenant, viewer := uuid.New(), uuid.New()
+	now := time.Now().UTC()
+	repo := &visibleAppointmentRepository{visible: []domainappointment.Entity{{ID: uuid.New(), TenantID: tenant}}}
+	access := &noPerAppointmentAccess{}
+	svc := NewService(repo, nil).WithClinicalAccess(access)
+	items, err := svc.ListByRange(context.Background(), ListInput{TenantID: tenant, ActorUserID: viewer, From: now, To: now.Add(time.Hour)})
+	if err != nil || len(items) != 1 || repo.calls != 1 || access.calls != 0 {
+		t.Fatalf("items=%#v err=%v list_calls=%d access_calls=%d", items, err, repo.calls, access.calls)
+	}
+}
+
 type fakeAuditor struct {
 	actions []string
 	err     error

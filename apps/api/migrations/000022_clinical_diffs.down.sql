@@ -7,6 +7,11 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- Version 16 cannot represent longitudinal sources. Remove only source-link
+-- rows owned by migrations 20-22 before restoring the narrower constraint;
+-- the AI run audit rows themselves remain intact.
+DELETE FROM clinical_ai_run_sources
+WHERE source_type IN ('clinical_evidence','clinical_event','clinical_process','clinical_hypothesis');
 ALTER TABLE clinical_ai_run_sources DROP CONSTRAINT clinical_ai_run_sources_source_type_check;
 ALTER TABLE clinical_ai_run_sources ADD CONSTRAINT clinical_ai_run_sources_source_type_check CHECK(source_type IN ('formulation_snapshot','formulation_anchor','session_report'));
 DROP TABLE IF EXISTS clinical_longitudinal_transitions;

@@ -92,6 +92,53 @@ func (s *Service) ListByClient(ctx context.Context, tenantID, clientID, actorID 
 	return s.repo.ListByClient(ctx, tenantID, clientID)
 }
 
+type Page struct {
+	Items      []domainclinicalsession.Entity
+	NextOffset *int
+}
+
+func (s *Service) ListPageByClient(ctx context.Context, tenantID, clientID, actorID uuid.UUID, limit, offset int) (Page, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return Page{}, domainerrors.NewValidation("invalid clinical session page")
+	}
+	if err := s.require(ctx, tenantID, actorID, clientID, "treating", "supervisor"); err != nil {
+		return Page{}, err
+	}
+	var items []domainclinicalsession.Entity
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListByClientPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]domainclinicalsession.Entity, error)
+	}); ok {
+		items, err = repo.ListByClientPage(ctx, tenantID, clientID, limit+1, offset)
+	} else {
+		items, err = s.repo.ListByClient(ctx, tenantID, clientID)
+		if err == nil {
+			if offset >= len(items) {
+				items = []domainclinicalsession.Entity{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return Page{}, err
+	}
+	page := Page{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
+
+func (s *Service) CanWrite(ctx context.Context, tenantID, clientID, actorID uuid.UUID) (bool, error) {
+	if tenantID == uuid.Nil || clientID == uuid.Nil || actorID == uuid.Nil {
+		return false, domainerrors.ErrForbidden
+	}
+	return s.access.CanAccessClient(ctx, tenantID, actorID, clientID, "treating")
+}
+
 func (s *Service) Complete(ctx context.Context, tenantID, sessionID, actorID uuid.UUID) (domainclinicalsession.Entity, error) {
 	return s.transition(ctx, tenantID, sessionID, actorID, domainclinicalsession.StatusCompleted)
 }

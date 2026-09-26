@@ -51,24 +51,25 @@ type Event struct {
 }
 
 type Process struct {
-	ID                 uuid.UUID    `json:"id"`
-	TenantID           uuid.UUID    `json:"tenant_id"`
-	ClientID           uuid.UUID    `json:"client_id"`
-	Title              string       `json:"title"`
-	Description        string       `json:"description"`
-	ApprovalStatus     string       `json:"approval_status"`
-	ClinicalStatus     string       `json:"clinical_status"`
-	Version            int          `json:"version"`
-	CreatedByUserID    *uuid.UUID   `json:"created_by_user_id,omitempty"`
-	CreatedFromAIRunID *uuid.UUID   `json:"created_from_ai_run_id,omitempty"`
-	ApprovedByUserID   *uuid.UUID   `json:"approved_by_user_id,omitempty"`
-	ApprovedAt         *time.Time   `json:"approved_at,omitempty"`
-	OpenedAt           *time.Time   `json:"opened_at,omitempty"`
-	ClosedAt           *time.Time   `json:"closed_at,omitempty"`
-	CreatedAt          time.Time    `json:"created_at"`
-	UpdatedAt          time.Time    `json:"updated_at"`
-	Events             []Event      `json:"events"`
-	Hypotheses         []Hypothesis `json:"hypotheses"`
+	ID                  uuid.UUID            `json:"id"`
+	TenantID            uuid.UUID            `json:"tenant_id"`
+	ClientID            uuid.UUID            `json:"client_id"`
+	Title               string               `json:"title"`
+	Description         string               `json:"description"`
+	ApprovalStatus      string               `json:"approval_status"`
+	ClinicalStatus      string               `json:"clinical_status"`
+	Version             int                  `json:"version"`
+	CreatedByUserID     *uuid.UUID           `json:"created_by_user_id,omitempty"`
+	CreatedFromAIRunID  *uuid.UUID           `json:"created_from_ai_run_id,omitempty"`
+	ApprovedByUserID    *uuid.UUID           `json:"approved_by_user_id,omitempty"`
+	ApprovedAt          *time.Time           `json:"approved_at,omitempty"`
+	OpenedAt            *time.Time           `json:"opened_at,omitempty"`
+	ClosedAt            *time.Time           `json:"closed_at,omitempty"`
+	CreatedAt           time.Time            `json:"created_at"`
+	UpdatedAt           time.Time            `json:"updated_at"`
+	Events              []Event              `json:"events"`
+	Hypotheses          []Hypothesis         `json:"hypotheses"`
+	TherapeuticStrategy *TherapeuticStrategy `json:"therapeutic_strategy,omitempty"`
 }
 
 type Hypothesis struct {
@@ -116,26 +117,27 @@ type Operation struct {
 }
 
 type Diff struct {
-	ID                    uuid.UUID     `json:"id"`
-	TenantID              uuid.UUID     `json:"tenant_id"`
-	ClientID              uuid.UUID     `json:"client_id"`
-	ClinicalSessionID     *uuid.UUID    `json:"clinical_session_id,omitempty"`
-	SourceSessionReportID *uuid.UUID    `json:"source_session_report_id,omitempty"`
-	SourceAIRunID         *uuid.UUID    `json:"source_ai_run_id,omitempty"`
-	Status                string        `json:"status"`
-	BaseStateVersion      int64         `json:"base_state_version"`
-	Revision              int           `json:"revision"`
-	IsStale               bool          `json:"is_stale"`
-	Uncertainties         []Uncertainty `json:"uncertainties"`
-	CreatedByUserID       *uuid.UUID    `json:"created_by_user_id,omitempty"`
-	ReviewedByUserID      *uuid.UUID    `json:"reviewed_by_user_id,omitempty"`
-	ReviewedAt            *time.Time    `json:"reviewed_at,omitempty"`
-	MergedByUserID        *uuid.UUID    `json:"merged_by_user_id,omitempty"`
-	MergedAt              *time.Time    `json:"merged_at,omitempty"`
-	MergedStateVersion    *int64        `json:"merged_state_version,omitempty"`
-	CreatedAt             time.Time     `json:"created_at"`
-	UpdatedAt             time.Time     `json:"updated_at"`
-	Operations            []Operation   `json:"operations"`
+	ID                       uuid.UUID     `json:"id"`
+	TenantID                 uuid.UUID     `json:"tenant_id"`
+	ClientID                 uuid.UUID     `json:"client_id"`
+	ClinicalSessionID        *uuid.UUID    `json:"clinical_session_id,omitempty"`
+	SourceSessionReportID    *uuid.UUID    `json:"source_session_report_id,omitempty"`
+	SourceAIRunID            *uuid.UUID    `json:"source_ai_run_id,omitempty"`
+	SourceExternalProposalID *uuid.UUID    `json:"source_external_proposal_id,omitempty"`
+	Status                   string        `json:"status"`
+	BaseStateVersion         int64         `json:"base_state_version"`
+	Revision                 int           `json:"revision"`
+	IsStale                  bool          `json:"is_stale"`
+	Uncertainties            []Uncertainty `json:"uncertainties"`
+	CreatedByUserID          *uuid.UUID    `json:"created_by_user_id,omitempty"`
+	ReviewedByUserID         *uuid.UUID    `json:"reviewed_by_user_id,omitempty"`
+	ReviewedAt               *time.Time    `json:"reviewed_at,omitempty"`
+	MergedByUserID           *uuid.UUID    `json:"merged_by_user_id,omitempty"`
+	MergedAt                 *time.Time    `json:"merged_at,omitempty"`
+	MergedStateVersion       *int64        `json:"merged_state_version,omitempty"`
+	CreatedAt                time.Time     `json:"created_at"`
+	UpdatedAt                time.Time     `json:"updated_at"`
+	Operations               []Operation   `json:"operations"`
 }
 
 type State struct {
@@ -146,6 +148,35 @@ type State struct {
 	RecentEvents         []Event      `json:"recent_events"`
 	ActiveEvidence       []Evidence   `json:"active_evidence"`
 	OpenProposals        []Diff       `json:"open_proposals"`
+}
+
+type HistoryTransition struct {
+	ID                uuid.UUID       `json:"id"`
+	DiffID            uuid.UUID       `json:"diff_id"`
+	OperationID       uuid.UUID       `json:"operation_id"`
+	EntityType        string          `json:"entity_type"`
+	EntityID          uuid.UUID       `json:"entity_id"`
+	Action            string          `json:"action"`
+	FromVersion       *int            `json:"from_version,omitempty"`
+	ToVersion         int             `json:"to_version"`
+	FromStatus        *string         `json:"from_status,omitempty"`
+	ToStatus          *string         `json:"to_status,omitempty"`
+	ActorUserID       uuid.UUID       `json:"actor_user_id"`
+	MergedByUserID    *uuid.UUID      `json:"merged_by_user_id,omitempty"`
+	MergedAt          *time.Time      `json:"merged_at,omitempty"`
+	OriginalProposal  json.RawMessage `json:"original_proposal"`
+	HumanModification json.RawMessage `json:"human_modification,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
+}
+
+type ProcessHistory struct {
+	Process     Process             `json:"process"`
+	Transitions []HistoryTransition `json:"transitions"`
+}
+
+type HypothesisHistory struct {
+	Hypothesis  Hypothesis          `json:"hypothesis"`
+	Transitions []HistoryTransition `json:"transitions"`
 }
 
 type CreateEvidenceProposal struct {
@@ -232,11 +263,13 @@ type SessionAnalysis struct {
 	ReportJSON    json.RawMessage
 }
 type CreateDiffInput struct {
+	ExternalProposalID                                      uuid.UUID
 	TenantID, ClientID, SessionID, ReportID, RunID, ActorID uuid.UUID
 	BaseStateVersion                                        int64
 	Operations                                              []Operation
 	Uncertainties                                           []Uncertainty
 	OutputHash                                              string
+	RunMetadata                                             map[string]any
 }
 type DecisionInput struct {
 	TenantID, DiffID, OperationID, ActorID uuid.UUID

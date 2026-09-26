@@ -3,17 +3,84 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	domainerrors "sessionflow/apps/api/internal/domain/errors"
 	approvedcontext "sessionflow/apps/api/internal/usecase/approvedcontext"
 	clinicalairun "sessionflow/apps/api/internal/usecase/clinicalairun"
 	clinicalmemory "sessionflow/apps/api/internal/usecase/clinicalmemory"
 	sessionreport "sessionflow/apps/api/internal/usecase/sessionreport"
 )
+
+func TestConcurrentReportApprovalCommitsOneStateAndAuditPostgresIntegration(t *testing.T) {
+	if os.Getenv("RUN_PG_INTEGRATION") != "1" {
+		t.Skip("set RUN_PG_INTEGRATION=1")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pool, err := NewPostgresPool(ctx, postgresIntegrationDatabaseURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	tenant, user, client, appointment, session := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	mustExecIntegrationSQL(t, pool, ctx, `INSERT INTO tenants(id,name) VALUES($1,'approval race')`, tenant)
+	mustExecIntegrationSQL(t, pool, ctx, `INSERT INTO users(id,tenant_id,email,password_hash) VALUES($1,$2,$3,'hash')`, user, tenant, user.String()+"@example.test")
+	mustExecIntegrationSQL(t, pool, ctx, `INSERT INTO clients(id,tenant_id,fullname) VALUES($1,$2,'Fictitious patient')`, client, tenant)
+	mustExecIntegrationSQL(t, pool, ctx, `INSERT INTO appointments(id,tenant_id,client_id,starts_at,ends_at,status) VALUES($1,$2,$3,NOW()-INTERVAL '1 hour',NOW(),'scheduled')`, appointment, tenant, client)
+	mustExecIntegrationSQL(t, pool, ctx, `INSERT INTO clinical_sessions(id,tenant_id,client_id,appointment_id,therapist_user_id,status,started_at,ended_at) VALUES($1,$2,$3,$4,$5,'completed',NOW()-INTERVAL '1 hour',NOW())`, session, tenant, client, appointment, user)
+	repo := NewSessionReportRepository(pool)
+	draft, err := repo.CreateDraft(ctx, tenant, session, user, nil, validRepositoryReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			ready.Done()
+			<-start
+			_, approveErr := repo.Approve(ctx, tenant, draft.ID, user, draft.Revision)
+			results <- approveErr
+		}()
+	}
+	ready.Wait()
+	close(start)
+	successes, conflicts := 0, 0
+	for i := 0; i < 2; i++ {
+		switch result := <-results; {
+		case result == nil:
+			successes++
+		case errors.Is(result, domainerrors.ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected approval result: %v", result)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("successes=%d conflicts=%d", successes, conflicts)
+	}
+	var approvedCount, auditCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM session_reports WHERE tenant_id=$1 AND clinical_session_id=$2 AND status='approved'`, tenant, session).Scan(&approvedCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE tenant_id=$1 AND entity_id=$2 AND action='session_report.approved'`, tenant, draft.ID).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.Get(ctx, tenant, draft.ID)
+	if err != nil || approvedCount != 1 || auditCount != 1 || stored.Revision != draft.Revision+1 {
+		t.Fatalf("approved=%d audit=%d stored=%#v err=%v", approvedCount, auditCount, stored, err)
+	}
+}
 
 func TestSessionReportVersionApprovalAndLongitudinalIsolationPostgresIntegration(t *testing.T) {
 	if os.Getenv("RUN_PG_INTEGRATION") != "1" {
@@ -53,11 +120,11 @@ func TestSessionReportVersionApprovalAndLongitudinalIsolationPostgresIntegration
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := repo.Approve(ctx, tenant, draft.ID, user)
+	approved, err := repo.Approve(ctx, tenant, draft.ID, user, draft.Revision)
 	if err != nil || approved.Status != "approved" {
 		t.Fatalf("approved=%#v err=%v", approved, err)
 	}
-	if _, err := repo.Approve(ctx, tenant, draft.ID, user); err == nil {
+	if _, err := repo.Approve(ctx, tenant, draft.ID, user, draft.Revision); err == nil {
 		t.Fatal("double approval must conflict")
 	}
 	runRepo := NewClinicalAIRunRepository(pool)
@@ -75,14 +142,22 @@ func TestSessionReportVersionApprovalAndLongitudinalIsolationPostgresIntegration
 	}
 	newDocument := document
 	newDocument.Summary = "Human corrected summary"
-	next, err := repo.Update(ctx, tenant, draft.ID, user, draft.Revision, newDocument)
+	next, err := repo.Update(ctx, tenant, draft.ID, user, approved.Revision, newDocument)
 	if err != nil || next.ID == draft.ID || next.Version != 2 || next.Status != "draft" {
 		t.Fatalf("next=%#v err=%v", next, err)
 	}
 	if _, err := repo.Update(ctx, tenant, next.ID, user, next.Revision+1, newDocument); err == nil {
 		t.Fatal("lost update must conflict")
 	}
-	latest, err := repo.Approve(ctx, tenant, next.ID, user)
+	newDocument.Summary = "Second clinician edit before approval"
+	current, err := repo.Update(ctx, tenant, next.ID, user, next.Revision, newDocument)
+	if err != nil || current.Revision != next.Revision+1 {
+		t.Fatalf("current=%#v err=%v", current, err)
+	}
+	if _, err := repo.Approve(ctx, tenant, next.ID, user, next.Revision); err == nil {
+		t.Fatal("stale report approval must conflict")
+	}
+	latest, err := repo.Approve(ctx, tenant, next.ID, user, current.Revision)
 	if err != nil || latest.Status != "approved" {
 		t.Fatal(err)
 	}

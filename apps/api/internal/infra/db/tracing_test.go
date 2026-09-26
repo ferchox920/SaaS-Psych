@@ -3,7 +3,7 @@ package db
 import "testing"
 
 func TestParseDatabaseName(t *testing.T) {
-	name := parseDatabaseName("postgres://user:pass@localhost:5432/sessionflow?sslmode=disable")
+	name := parseDatabaseName("postgres://user:pass@localhost:5433/sessionflow?sslmode=disable")
 	if name != "sessionflow" {
 		t.Fatalf("expected sessionflow, got %q", name)
 	}

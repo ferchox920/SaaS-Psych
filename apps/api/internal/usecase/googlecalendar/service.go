@@ -256,14 +256,15 @@ func (s *Service) PushAppointment(ctx context.Context, tenantID, userID, appoint
 		return link, nil
 	}
 	var event domaincalendar.Event
-	if errors.Is(linkErr, domainerrors.ErrNotFound) {
+	switch {
+	case errors.Is(linkErr, domainerrors.ErrNotFound):
 		event, err = s.provider.CreateEvent(ctx, accessToken, connection.CalendarID, appointment.ID, tenantID, appointment.StartsAt, appointment.EndsAt, appointment.Location)
 		if err == nil {
 			link = domaincalendar.Link{ID: uuid.New(), TenantID: tenantID, AppointmentID: appointment.ID, ConnectionID: connection.ID, GoogleEventID: event.ID}
 		}
-	} else if linkErr == nil {
+	case linkErr == nil:
 		event, err = s.provider.UpdateEvent(ctx, accessToken, connection.CalendarID, link.GoogleEventID, appointment.ID, tenantID, appointment.StartsAt, appointment.EndsAt, appointment.Location)
-	} else {
+	default:
 		return domaincalendar.Link{}, linkErr
 	}
 	if err != nil {

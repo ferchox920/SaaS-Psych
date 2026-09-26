@@ -91,17 +91,21 @@ func (h *ClientHandler) List(c echo.Context) error {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "auth context missing")
 	}
 
-	items, err := h.service.List(c.Request().Context(), tenantID, principal.UserID)
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	page, err := h.service.ListPage(c.Request().Context(), tenantID, principal.UserID, false, limit, offset)
 	if err != nil {
 		return h.handleClientError(c, err)
 	}
 
-	response := make([]clientResponse, 0, len(items))
-	for _, item := range items {
+	response := make([]clientResponse, 0, len(page.Items))
+	for _, item := range page.Items {
 		response = append(response, toClientResponse(item))
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"items": response})
+	return c.JSON(http.StatusOK, map[string]any{"items": response, "next_offset": page.NextOffset})
 }
 
 func (h *ClientHandler) ListArchived(c echo.Context) error {
@@ -112,15 +116,19 @@ func (h *ClientHandler) ListArchived(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	items, err := h.service.ListArchived(c.Request().Context(), tenantID, principal.UserID)
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	page, err := h.service.ListPage(c.Request().Context(), tenantID, principal.UserID, true, limit, offset)
 	if err != nil {
 		return h.handleClientError(c, err)
 	}
-	response := make([]clientResponse, 0, len(items))
-	for _, item := range items {
+	response := make([]clientResponse, 0, len(page.Items))
+	for _, item := range page.Items {
 		response = append(response, toClientResponse(item))
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": response})
+	return c.JSON(http.StatusOK, map[string]any{"items": response, "next_offset": page.NextOffset})
 }
 
 func (h *ClientHandler) Get(c echo.Context) error {

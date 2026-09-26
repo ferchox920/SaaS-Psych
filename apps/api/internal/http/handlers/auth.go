@@ -106,17 +106,17 @@ func (h *AuthHandler) Logout(c echo.Context) error {
 		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "auth service unavailable")
 	}
 
-	refreshToken, err := h.refreshTokenFromCookie(c)
-	if err != nil {
-		return err
-	}
-
 	tenantID, ok := httpmiddleware.TenantIDFromContext(c.Request().Context())
 	if !ok {
 		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "tenant context missing")
 	}
+	cookie, err := c.Cookie(refreshCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		h.clearRefreshCookie(c)
+		return c.NoContent(http.StatusNoContent)
+	}
 
-	if err := h.service.Logout(c.Request().Context(), tenantID, refreshToken); err != nil {
+	if err := h.service.Logout(c.Request().Context(), tenantID, cookie.Value); err != nil {
 		return h.handleAuthError(c, err)
 	}
 

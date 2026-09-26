@@ -1,6 +1,6 @@
 ﻿# SessionFlow (Go) - Directrices del Proyecto
 
-> SaaS multi-tenant para gestion de sesiones (agenda + clientes + notas + auditoria), disenado para ser *portfolio-grade*: seguro, observable, testeable y con arquitectura clara.
+> SaaS multi-tenant para gestión de sesiones, informes y revisión clínica humana. Este documento conserva decisiones de diseño; el estado operativo actual está en [README.md](./README.md) y [docs/RUNBOOK.md](./docs/RUNBOOK.md).
 
 ---
 
@@ -24,10 +24,10 @@ Construir un sistema multi-tenant "production vibes" que demuestre:
 - Rate limiting (Redis).
 - Observabilidad basica (logs + metricas; tracing si entra).
 
-### Fuera de alcance (por ahora)
+### Alcance y límites actuales
 - Facturacion/pagos.
 - Notificaciones (email/whatsapp).
-- IA (sin APIs pagas).
+- Existe asistencia de IA local con Ollama y una integración remota experimental sujeta a controles explícitos; ninguna salida se aprueba ni incorpora automáticamente a la memoria clínica. El modo demo usa únicamente una fixture simulada, no inferencia.
 - Multi-db por tenant (schema/database per tenant).
 
 ---
@@ -58,10 +58,10 @@ Construir un sistema multi-tenant "production vibes" que demuestre:
 
 ### Backend
 - Go 1.22+
-- Router: Echo o Fiber (elegir 1; recomendado: **Echo**)
+- Router: Echo.
 - DB: Postgres
 - Migraciones: golang-migrate (o goose)
-- Queries: `sqlc` (recomendado) o `pgx` + hand-written queries
+- Queries: `pgx` y consultas SQL revisadas con aislamiento por tenant.
 - Redis: rate limit + (opcional) sesiones/cache
 
 ### Observabilidad

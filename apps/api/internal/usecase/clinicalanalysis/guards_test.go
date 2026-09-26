@@ -1,6 +1,25 @@
 package clinicalanalysis
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestGenericClinicalCopyDoesNotNameClinician(t *testing.T) {
+	result := ApplyDeterministicGuards(LiveRequest{Fragment: "Caso ficticio: no quiero vivir."}, guardedResult())
+	for label, value := range map[string]string{
+		"live prompt":   LiveSystemPrompt(),
+		"review prompt": ReviewSystemPrompt(),
+		"risk caution":  result.Caution,
+	} {
+		if strings.Contains(strings.ToLower(value), "fernando") {
+			t.Errorf("%s names an individual in generic clinical copy", label)
+		}
+	}
+	if !strings.Contains(result.Caution, "protocolo clínico") || !strings.Contains(LiveSystemPrompt(), "juicio clínico") {
+		t.Fatal("generic language must preserve the clinical protocol and human-judgment safeguards")
+	}
+}
 
 func TestApplyDeterministicGuardsBlocksRedConfrontation(t *testing.T) {
 	result := guardedResult()

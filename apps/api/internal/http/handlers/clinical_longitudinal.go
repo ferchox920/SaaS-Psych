@@ -41,22 +41,108 @@ func (h *ClinicalLongitudinalHandler) Evidence(c echo.Context) error {
 	})
 }
 func (h *ClinicalLongitudinalHandler) Events(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
 	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
-		x, e := h.service.ListEvents(c.Request().Context(), t, id, a)
-		return map[string]any{"items": x}, e
+		page, e := h.service.ListEventsPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
 	})
 }
 func (h *ClinicalLongitudinalHandler) Processes(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
 	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
-		x, e := h.service.ListProcesses(c.Request().Context(), t, id, a)
-		return map[string]any{"items": x}, e
+		page, e := h.service.ListProcessesPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
 	})
 }
 func (h *ClinicalLongitudinalHandler) Hypotheses(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
 	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
-		x, e := h.service.ListHypotheses(c.Request().Context(), t, id, a)
-		return map[string]any{"items": x}, e
+		page, e := h.service.ListHypothesesPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
 	})
+}
+func (h *ClinicalLongitudinalHandler) Targets(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
+		page, e := h.service.ListTargetsPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
+	})
+}
+func (h *ClinicalLongitudinalHandler) Goals(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
+		page, e := h.service.ListGoalsPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
+	})
+}
+func (h *ClinicalLongitudinalHandler) GIRAs(c echo.Context) error {
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {
+		page, e := h.service.ListGIRAsPage(c.Request().Context(), t, id, a, limit, offset)
+		return map[string]any{"items": page.Items, "next_offset": page.NextOffset}, e
+	})
+}
+func (h *ClinicalLongitudinalHandler) GetGIRA(c echo.Context) error {
+	t, p, err := tenantAndPrincipal(c)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "GIRA id must be a valid uuid")
+	}
+	out, err := h.service.GetGIRA(c.Request().Context(), t, id, p.UserID)
+	if err != nil {
+		return handleLongitudinalError(c, err)
+	}
+	return c.JSON(http.StatusOK, out)
+}
+func (h *ClinicalLongitudinalHandler) Approaches(c echo.Context) error {
+	x, err := h.service.ListApproaches(c.Request().Context())
+	if err != nil {
+		return handleLongitudinalError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": x})
+}
+func (h *ClinicalLongitudinalHandler) Techniques(c echo.Context) error {
+	x, err := h.service.ListTechniques(c.Request().Context())
+	if err != nil {
+		return handleLongitudinalError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": x})
+}
+func (h *ClinicalLongitudinalHandler) AnalyzeGIRA(c echo.Context) error {
+	t, p, err := tenantAndPrincipal(c)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "process id must be a valid uuid")
+	}
+	out, err := h.service.BuildGIRA(c.Request().Context(), t, id, p.UserID)
+	if err != nil {
+		return handleLongitudinalError(c, err)
+	}
+	return c.JSON(http.StatusCreated, out)
 }
 func (h *ClinicalLongitudinalHandler) Diffs(c echo.Context) error {
 	return h.withClient(c, func(t, id, a uuid.UUID) (any, error) {

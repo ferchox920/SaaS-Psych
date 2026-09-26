@@ -2,10 +2,24 @@ package clinicalanalysis
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+type CodedProviderError interface {
+	error
+	ProviderErrorCode() string
+}
+
+func NormalizedProviderErrorCode(err error) string {
+	var coded CodedProviderError
+	if errors.As(err, &coded) {
+		return coded.ProviderErrorCode()
+	}
+	return ""
+}
 
 const PromptVersion = "clinical-live-v1"
 const ReviewPromptVersion = "clinical-review-v1"
@@ -137,16 +151,67 @@ type GenerationProgress struct {
 }
 
 type GenerationMetrics struct {
-	FirstToken time.Duration `json:"first_token"`
-	Total      time.Duration `json:"total"`
-	EvalCount  int           `json:"eval_count"`
-	EvalRate   float64       `json:"eval_tokens_per_second"`
-	Repaired   bool          `json:"repaired"`
+	FirstToken      time.Duration `json:"first_token"`
+	PrimaryDuration time.Duration `json:"primary_duration"`
+	Total           time.Duration `json:"total"`
+	RepairDuration  time.Duration `json:"repair_duration"`
+	RepairReason    string        `json:"repair_reason,omitempty"`
+	EvalCount       int           `json:"eval_count"`
+	EvalRate        float64       `json:"eval_tokens_per_second"`
+	Repaired        bool          `json:"repaired"`
 }
 
 type ProviderOutput struct {
-	JSON    []byte
-	Metrics GenerationMetrics
+	JSON     []byte
+	Metrics  GenerationMetrics
+	Metadata ProviderMetadata
+}
+
+// ProviderMetadata is a provider-neutral, non-clinical provenance envelope.
+// It must never contain prompts, model output or clinical narrative.
+type ProviderMetadata struct {
+	RemoteRequestID     string `json:"remote_request_id,omitempty"`
+	ProviderRegion      string `json:"provider_region,omitempty"`
+	ModelSnapshot       string `json:"model_snapshot,omitempty"`
+	InputTokens         int    `json:"input_tokens,omitempty"`
+	OutputTokens        int    `json:"output_tokens,omitempty"`
+	ReasoningTokens     int    `json:"reasoning_tokens,omitempty"`
+	CacheTokens         int    `json:"cache_tokens,omitempty"`
+	RepairAttempts      int    `json:"repair_attempts"`
+	PriceConfigVersion  string `json:"price_config_version,omitempty"`
+	EstimatedCostMicros int64  `json:"estimated_cost_micros,omitempty"`
+}
+
+func (m ProviderMetadata) SafeMap() map[string]any {
+	out := map[string]any{"repair_attempts": m.RepairAttempts}
+	if m.RemoteRequestID != "" {
+		out["remote_request_id"] = m.RemoteRequestID
+	}
+	if m.ProviderRegion != "" {
+		out["provider_region"] = m.ProviderRegion
+	}
+	if m.ModelSnapshot != "" {
+		out["model_snapshot"] = m.ModelSnapshot
+	}
+	if m.InputTokens > 0 {
+		out["input_tokens"] = m.InputTokens
+	}
+	if m.OutputTokens > 0 {
+		out["output_tokens"] = m.OutputTokens
+	}
+	if m.ReasoningTokens > 0 {
+		out["reasoning_tokens"] = m.ReasoningTokens
+	}
+	if m.CacheTokens > 0 {
+		out["cache_tokens"] = m.CacheTokens
+	}
+	if m.PriceConfigVersion != "" {
+		out["price_config_version"] = m.PriceConfigVersion
+	}
+	if m.EstimatedCostMicros > 0 {
+		out["estimated_cost_micros"] = m.EstimatedCostMicros
+	}
+	return out
 }
 
 type ClinicalInferenceProvider interface {

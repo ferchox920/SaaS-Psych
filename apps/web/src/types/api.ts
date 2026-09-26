@@ -1,5 +1,6 @@
 export type ListEnvelope<T> = {
   items: T[];
+  next_offset?: number | null;
 };
 
 export type Client = {
@@ -28,6 +29,7 @@ export type Appointment = {
   starts_at: string;
   ends_at: string;
   status: string;
+  revision: number;
   location: string;
   created_at: string;
   updated_at: string;
@@ -44,6 +46,7 @@ export type AppointmentUpdateInput = {
   starts_at: string;
   ends_at: string;
   location: string;
+  expected_revision: number;
 };
 
 export type GoogleCalendarStatus = {

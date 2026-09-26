@@ -72,27 +72,51 @@ func (r *ClientRepository) Create(ctx context.Context, in domainclient.Entity, a
 }
 
 func (r *ClientRepository) List(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error) {
-	return r.listByArchiveState(ctx, tenantID, false)
+	return r.listByArchiveState(ctx, tenantID, false, nil, 0, 0)
 }
 
 func (r *ClientRepository) ListArchived(ctx context.Context, tenantID uuid.UUID) ([]domainclient.Entity, error) {
-	return r.listByArchiveState(ctx, tenantID, true)
+	return r.listByArchiveState(ctx, tenantID, true, nil, 0, 0)
 }
 
-func (r *ClientRepository) listByArchiveState(ctx context.Context, tenantID uuid.UUID, archived bool) ([]domainclient.Entity, error) {
+func (r *ClientRepository) ListVisible(ctx context.Context, tenantID, viewerID uuid.UUID, archived bool) ([]domainclient.Entity, error) {
+	return r.listByArchiveState(ctx, tenantID, archived, &viewerID, 0, 0)
+}
+
+func (r *ClientRepository) ListVisiblePage(ctx context.Context, tenantID, viewerID uuid.UUID, archived bool, limit, offset int) ([]domainclient.Entity, error) {
+	return r.listByArchiveState(ctx, tenantID, archived, &viewerID, limit, offset)
+}
+
+func (r *ClientRepository) listByArchiveState(ctx context.Context, tenantID uuid.UUID, archived bool, viewerID *uuid.UUID, limit, offset int) ([]domainclient.Entity, error) {
 	archivePredicate := "archived_at IS NULL"
 	if archived {
 		archivePredicate = "archived_at IS NOT NULL"
 	}
 	query := `
-		SELECT id, tenant_id, fullname, contact, notes_public,
-		       archived_at, archived_by_user_id, archive_reason, created_at, updated_at
-		FROM clients
-		WHERE tenant_id = $1 AND ` + archivePredicate + `
-		ORDER BY created_at DESC, id DESC
-	`
+		SELECT c.id, c.tenant_id, c.fullname, c.contact, c.notes_public,
+		       c.archived_at, c.archived_by_user_id, c.archive_reason, c.created_at, c.updated_at
+		FROM clients c
+		WHERE c.tenant_id = $1 AND c.` + archivePredicate
+	args := []any{tenantID}
+	if viewerID != nil {
+		query += ` AND (
+			EXISTS (SELECT 1 FROM client_clinical_assignments cca
+				WHERE cca.tenant_id=c.tenant_id AND cca.client_id=c.id AND cca.user_id=$2
+				AND cca.relationship IN ('treating','supervisor')
+				AND cca.starts_at<=$3 AND (cca.ends_at IS NULL OR cca.ends_at>$3))
+			OR EXISTS (SELECT 1 FROM clinical_access_exceptions cae
+				WHERE cae.tenant_id=c.tenant_id AND cae.client_id=c.id AND cae.user_id=$2
+				AND cae.starts_at<=$3 AND cae.expires_at>$3 AND cae.revoked_at IS NULL)
+		)`
+		args = append(args, *viewerID, time.Now().UTC())
+	}
+	query += ` ORDER BY c.created_at DESC, c.id DESC`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+		args = append(args, limit, offset)
+	}
 
-	rows, err := r.pool.Query(ctx, query, tenantID)
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query clients: %w", err)
 	}

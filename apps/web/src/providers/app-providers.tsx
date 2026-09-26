@@ -6,8 +6,9 @@ import { useState } from "react";
 import { Toaster } from "sonner";
 
 import { AuthProvider } from "@/features/auth/lib/auth-context";
+import type { LoginFormValues } from "@/features/auth/lib/auth-types";
 
-export function AppProviders({ children }: Readonly<{ children: React.ReactNode }>) {
+export function AppProviders({ children, demoCredentials }: Readonly<{ children: React.ReactNode; demoCredentials?: LoginFormValues }>) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -23,7 +24,7 @@ export function AppProviders({ children }: Readonly<{ children: React.ReactNode 
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+      <AuthProvider demoCredentials={demoCredentials}>
         {children}
         <Toaster richColors position="top-right" />
       </AuthProvider>

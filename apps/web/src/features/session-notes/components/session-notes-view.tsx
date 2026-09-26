@@ -18,6 +18,7 @@ import {
   updateSessionNote,
 } from "@/features/session-notes/api/session-notes-api";
 import { SessionNoteFormCard } from "@/features/session-notes/components/session-note-form-card";
+import { NoteLifecycleCard } from "@/features/session-notes/components/note-lifecycle-card";
 import { getSessionNoteErrorMessage } from "@/features/session-notes/lib/session-note-error-messages";
 import { SessionNoteFormValues } from "@/features/session-notes/schemas/session-note-schema";
 
@@ -83,7 +84,7 @@ export function SessionNotesView({ initialAppointmentId }: SessionNotesViewProps
   const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data?.items]);
   const activeNote = notes.find((note) => note.id === activeNoteId) ?? null;
   const canEditActiveNote =
-    !activeNote || activeNote.author_user_id === session?.userId || ["owner", "admin"].includes(session?.role ?? "");
+    !activeNote || (activeNote.status === "draft" && (activeNote.author_user_id === session?.userId || ["owner", "admin"].includes(session?.role ?? "")));
 
   const refreshNotes = async (nextNoteId?: string | null) => {
     await queryClient.invalidateQueries({
@@ -145,10 +146,10 @@ export function SessionNotesView({ initialAppointmentId }: SessionNotesViewProps
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <Badge variant="outline">Session notes</Badge>
-        <h2 className="text-3xl font-semibold">Notas de sesion</h2>
+        <Badge variant="outline">Notas clínicas</Badge>
+        <h2 className="text-3xl font-semibold">Notas de sesión</h2>
         <p className="text-muted-foreground">
-          Flujo alineado con el backend: primero eliges una cita y luego trabajas sus notas, respetando privacidad y permisos por autor/rol.
+          Elige una cita para consultar o editar sus notas, según tus permisos.
         </p>
       </header>
 
@@ -158,9 +159,9 @@ export function SessionNotesView({ initialAppointmentId }: SessionNotesViewProps
             <CardHeader className="gap-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <CardTitle>Seleccion de cita</CardTitle>
+                <CardTitle>Selección de cita</CardTitle>
                   <CardDescription>
-                    El endpoint de notas depende de `appointment_id`, por eso la cita seleccionada gobierna todo el modulo.
+                    Selecciona una cita para consultar sus notas y versiones.
                   </CardDescription>
                 </div>
                 {resolvedSelectedAppointmentId ? (
@@ -323,6 +324,8 @@ export function SessionNotesView({ initialAppointmentId }: SessionNotesViewProps
           ) : null}
         </div>
 
+        <div className="space-y-4">
+        {activeNote ? <NoteLifecycleCard key={activeNote.id} note={activeNote} canEdit={activeNote.author_user_id === session?.userId || ["owner", "admin"].includes(session?.role ?? "")} /> : null}
         <SessionNoteFormCard
           activeNote={activeNote}
           canEditActiveNote={canEditActiveNote}
@@ -336,6 +339,7 @@ export function SessionNotesView({ initialAppointmentId }: SessionNotesViewProps
           }}
           onSubmit={handleSubmit}
         />
+        </div>
       </section>
     </div>
   );

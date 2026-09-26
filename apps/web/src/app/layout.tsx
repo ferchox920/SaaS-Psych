@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppProviders } from "@/providers/app-providers";
+import { demoCredentials } from "@/features/auth/lib/demo-credentials";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +17,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className="antialiased">
-        <AppProviders>{children}</AppProviders>
+        <AppProviders demoCredentials={demoCredentials ?? undefined}>{children}</AppProviders>
       </body>
     </html>
   );

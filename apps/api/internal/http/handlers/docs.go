@@ -1,13 +1,14 @@
 package handlers
 
 import (
+	_ "embed"
 	"net/http"
-	"os"
-	"path/filepath"
-	"runtime"
 
 	"github.com/labstack/echo/v4"
 )
+
+//go:embed openapi.yaml
+var embeddedOpenAPISpec []byte
 
 const swaggerUIHTML = `<!doctype html>
 <html lang="en">
@@ -35,25 +36,5 @@ func DocsUI(c echo.Context) error {
 }
 
 func OpenAPISpec(c echo.Context) error {
-	specPath, err := resolveOpenAPISpecPath()
-	if err != nil {
-		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "openapi spec path resolution failed")
-	}
-
-	content, err := os.ReadFile(specPath)
-	if err != nil {
-		return writeAPIError(c, http.StatusInternalServerError, "internal_error", "openapi spec unavailable")
-	}
-
-	return c.Blob(http.StatusOK, "application/yaml; charset=utf-8", content)
-}
-
-func resolveOpenAPISpecPath() (string, error) {
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", os.ErrNotExist
-	}
-
-	handlersDir := filepath.Dir(currentFile)
-	return filepath.Clean(filepath.Join(handlersDir, "..", "..", "..", "..", "..", "docs", "openapi.yaml")), nil
+	return c.Blob(http.StatusOK, "application/yaml; charset=utf-8", embeddedOpenAPISpec)
 }

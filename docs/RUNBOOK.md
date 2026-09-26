@@ -55,7 +55,7 @@ Preflight recomendado antes de tests de integracion locales:
 make integration-preflight
 ```
 
-Este comando detecta temprano drift del entorno local: valida conflictos por contenedores legacy usando `5432/6379`, health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
+Este comando detecta temprano drift del entorno local: valida conflictos por contenedores legacy usando `5433/6379`, health + credenciales de Postgres (`sessionflow/sessionflow`) y conectividad basica a Redis.
 
 Si estas en Windows sin `make`, el equivalente manual es:
 
@@ -196,7 +196,7 @@ Impacto:
 Si `docker compose up -d postgres redis` o `make integration-preflight` falla por puertos ocupados, revisar contenedores legacy antes de tocar volumenes:
 
 ```bash
-docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker ps --filter publish=5433 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
 docker compose down --remove-orphans
 ```
 
@@ -213,7 +213,7 @@ Reset equivalente sin `make` en Windows:
 docker compose down --remove-orphans
 docker volume rm -f sessionflow_postgres_data
 docker compose up -d postgres redis
-migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable" up
+migrate -path apps/api/migrations -database "postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable" up
 ```
 
 Solo despues de descartar conflicto de contenedores conviene usar `make db-reset-local`.
@@ -326,3 +326,8 @@ Estandar actual local/CI para integracion DB:
 - alcance: `./internal/http ./internal/infra/db`
 - flags: `go test -count=1`
 - env: `RUN_PG_INTEGRATION=1`
+# IP cliente y rate limiting
+
+El API utiliza la IP de la conexión TCP para el rate limit de login. Si se despliega detrás de un proxy de confianza, configurar `TRUSTED_PROXY_CIDRS` con sus CIDR separados por comas y hacer que el proxy de borde elimine los encabezados `X-Forwarded-For` entrantes antes de establecer el suyo. Sin esa configuración, los encabezados enviados por clientes no influyen en `RealIP`; detrás de un proxy, el límite se aplica a la IP del proxy.
+
+El servidor limita solicitudes JSON a 1 MiB (también con transferencia fragmentada), sin aplicar ese límite a audio binario, que tiene su propio límite. Los tiempos máximos son 10 s para cabeceras, 60 s para leer una solicitud y 120 s de conexión inactiva. No se configura un timeout global de escritura porque los análisis clínicos usan SSE; el proveedor y las operaciones largas conservan sus propios deadlines.

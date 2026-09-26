@@ -100,7 +100,7 @@ func ApplyDeterministicGuards(request LiveRequest, result Result) Result {
 		result.Hypothesis.EpistemicLevel = EpistemicHypothesis
 		result.Hypothesis.TrafficLight = TrafficRed
 		result.Hypothesis.Text = "Posible indicador de riesgo que requiere evaluación clínica humana; este fragmento no permite confirmarlo ni descartarlo."
-		result.Caution = "Suspender interpretaciones confrontativas o existenciales y aplicar el protocolo clínico configurado por Fernando."
+		result.Caution = "Suspender interpretaciones confrontativas o existenciales y aplicar el protocolo clínico configurado."
 		result.SuggestedInterventions = []string{"Evaluar directamente seguridad, inmediatez, medios, intención, protección y capacidad de autocuidado según el protocolo clínico."}
 		result.TherapistMeta = nil
 	}

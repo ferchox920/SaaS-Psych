@@ -33,30 +33,30 @@ export function LoginForm({ next }: { next: string }) {
       <CardHeader className="space-y-3">
         <div className="inline-flex w-fit items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-secondary-foreground">
           <ShieldCheck className="size-3.5" />
-          Access portal
+          Acceso seguro
         </div>
         <CardTitle className="text-3xl">Ingresar al workspace</CardTitle>
         <CardDescription>
-          El tenant viaja por header, asi que el login necesita el tenant UUID desde el inicio.
+          Ingresa el identificador de tu organización y tus credenciales.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div className="space-y-2">
             <Label htmlFor="tenantId">Tenant ID</Label>
-            <Input id="tenantId" placeholder="11111111-1111-1111-1111-111111111111" {...form.register("tenantId")} />
+            <Input id="tenantId" placeholder="UUID de la organización" {...form.register("tenantId")} />
             <FieldError message={form.formState.errors.tenantId?.message} />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="owner@tenant-a.local" {...form.register("email")} />
+            <Input id="email" type="email" placeholder="correo@organizacion.com" {...form.register("email")} />
             <FieldError message={form.formState.errors.email?.message} />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" placeholder="ChangeMe123!" {...form.register("password")} />
+            <Input id="password" type="password" placeholder="Tu contraseña" {...form.register("password")} />
             <FieldError message={form.formState.errors.password?.message} />
           </div>
 

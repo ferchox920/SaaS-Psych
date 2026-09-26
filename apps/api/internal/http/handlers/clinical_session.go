@@ -67,11 +67,19 @@ func (h *ClinicalSessionHandler) ListByClient(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	items, err := h.service.ListByClient(c.Request().Context(), tenantID, clientID, principal.UserID)
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	page, err := h.service.ListPageByClient(c.Request().Context(), tenantID, clientID, principal.UserID, limit, offset)
 	if err != nil {
 		return handleClinicalSessionError(c, err)
 	}
-	return c.JSON(http.StatusOK, map[string]any{"items": items})
+	canWrite, err := h.service.CanWrite(c.Request().Context(), tenantID, clientID, principal.UserID)
+	if err != nil {
+		return handleClinicalSessionError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": page.Items, "can_write": canWrite, "next_offset": page.NextOffset})
 }
 func (h *ClinicalSessionHandler) Complete(c echo.Context) error { return h.transition(c, true) }
 func (h *ClinicalSessionHandler) Void(c echo.Context) error     { return h.transition(c, false) }

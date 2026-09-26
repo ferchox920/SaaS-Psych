@@ -49,12 +49,13 @@ func (r *reportRepoStub) Update(_ context.Context, _, _, _ uuid.UUID, expected i
 	r.report.ReportJSON = raw
 	return r.report, nil
 }
-func (r *reportRepoStub) Approve(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Report, error) {
-	if r.report.Status != "draft" {
+func (r *reportRepoStub) Approve(_ context.Context, _, _, _ uuid.UUID, expected int) (Report, error) {
+	if r.report.Status != "draft" || r.report.Revision != expected {
 		return Report{}, domainerrors.ErrConflict
 	}
 	r.approved = true
 	r.report.Status = "approved"
+	r.report.Revision++
 	return r.report, nil
 }
 
@@ -170,6 +171,8 @@ func TestUpdateAllocatesIdentityBeyondStoredReportHistory(t *testing.T) {
 	repo := &reportRepoStub{details: SessionDetails{ID: session, ClientID: client}, report: Report{ID: uuid.New(), TenantID: tenant, ClinicalSessionID: session, Revision: 1, Status: "draft", ReportJSON: raw}}
 	incoming := validReport()
 	incoming.Facts = []Fact{{Statement: "new", Category: "reported"}}
+	incoming.InferenceCandidates[0].EvidenceRefs = []string{}
+	incoming.HypothesisCandidates[0].EvidenceRefs = []string{}
 	out, err := newReportService(repo, &reportProvider{}, &reportRunRepo{}, true).Update(context.Background(), UpdateInput{TenantID: tenant, ReportID: repo.report.ID, ActorUserID: actor, ExpectedRevision: 1, Report: incoming})
 	if err != nil {
 		t.Fatal(err)
@@ -265,11 +268,69 @@ func TestApprovingSessionReportDoesNotMutateApprovedLongitudinalFormulation(t *t
 	tenant, session, actor, client := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	state := struct{ Snapshots, Anchors, Suggestions []string }{[]string{"approved-v3"}, []string{"fact-a", "hypothesis-b"}, []string{"accepted-s1", "pending-s2"}}
 	before := struct{ Snapshots, Anchors, Suggestions []string }{append([]string{}, state.Snapshots...), append([]string{}, state.Anchors...), append([]string{}, state.Suggestions...)}
-	repo := &reportRepoStub{details: SessionDetails{ID: session, ClientID: client}, report: Report{ID: uuid.New(), TenantID: tenant, ClinicalSessionID: session, Status: "draft"}}
-	if _, err := newReportService(repo, &reportProvider{}, &reportRunRepo{}, true).Approve(context.Background(), tenant, repo.report.ID, actor); err != nil {
+	repo := &reportRepoStub{details: SessionDetails{ID: session, ClientID: client}, report: Report{ID: uuid.New(), TenantID: tenant, ClinicalSessionID: session, Status: "draft", Revision: 1}}
+	if _, err := newReportService(repo, &reportProvider{}, &reportRunRepo{}, true).Approve(context.Background(), tenant, repo.report.ID, actor, repo.report.Revision); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(before, state) {
 		t.Fatalf("approved longitudinal state mutated: before=%#v after=%#v", before, state)
+	}
+}
+
+func TestApproveRequiresObservedRevision(t *testing.T) {
+	tenant, session, actor, client := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	repo := &reportRepoStub{details: SessionDetails{ID: session, ClientID: client}, report: Report{ID: uuid.New(), TenantID: tenant, ClinicalSessionID: session, Status: "draft", Revision: 2}}
+	service := newReportService(repo, &reportProvider{}, &reportRunRepo{}, true)
+	if _, err := service.Approve(context.Background(), tenant, repo.report.ID, actor, 0); !errors.Is(err, domainerrors.ErrValidation) {
+		t.Fatalf("missing revision err=%v", err)
+	}
+	if _, err := service.Approve(context.Background(), tenant, repo.report.ID, actor, 1); !errors.Is(err, domainerrors.ErrConflict) {
+		t.Fatalf("stale revision err=%v", err)
+	}
+	if repo.approved {
+		t.Fatal("stale approval changed report")
+	}
+	approved, err := service.Approve(context.Background(), tenant, repo.report.ID, actor, 2)
+	if err != nil || approved.Status != "approved" || approved.Revision != 3 {
+		t.Fatalf("approved=%#v err=%v", approved, err)
+	}
+}
+
+func TestReportEvidenceReferencesAreStructural(t *testing.T) {
+	base := validReport()
+	if err := Validate(base); err != nil {
+		t.Fatalf("valid reference rejected: %v", err)
+	}
+	base.RelevantChanges = []RelevantChange{{ID: "change-001", Description: "Cambio ficticio", Category: "reported"}}
+	base.Interventions = []Intervention{{ID: "intervention-001", Type: "discussion", Description: "Intervención ficticia"}}
+	base.PatientResponses = []PatientResponse{{ID: "response-001", ResponseType: "reported", Description: "Respuesta ficticia"}}
+	base.AffectiveNodes = []AffectiveNode{{ID: "affect-001", Description: "Afecto ficticio"}}
+	base.Facts = append(base.Facts, Fact{ID: "fact-002", Statement: "Otro hecho ficticio", Category: "patient_report"})
+	base.Facts[0], base.Facts[1] = base.Facts[1], base.Facts[0]
+	base.InferenceCandidates[0].EvidenceRefs = []string{"fact-001", "change-001", "response-001", "affect-001"}
+	if err := Validate(base); err != nil {
+		t.Fatalf("reordered items and allowed evidence types rejected: %v", err)
+	}
+	tests := []struct {
+		name string
+		edit func(*ReportV1)
+	}{
+		{"missing", func(r *ReportV1) { r.InferenceCandidates[0].EvidenceRefs = []string{"fact-999"} }},
+		{"duplicate", func(r *ReportV1) { r.HypothesisCandidates[0].EvidenceRefs = []string{"fact-001", "fact-001"} }},
+		{"non-evidence type", func(r *ReportV1) { r.HypothesisCandidates[0].EvidenceRefs = []string{"inference-001"} }},
+		{"intervention is not patient evidence", func(r *ReportV1) {
+			r.Interventions = []Intervention{{ID: "intervention-001", Type: "discussion", Description: "Intervención ficticia"}}
+			r.HypothesisCandidates[0].EvidenceRefs = []string{"intervention-001"}
+		}},
+		{"deleted source", func(r *ReportV1) { r.Facts = []Fact{} }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := validReport()
+			tc.edit(&r)
+			if err := Validate(r); !errors.Is(err, domainerrors.ErrValidation) {
+				t.Fatalf("err=%v", err)
+			}
+		})
 	}
 }

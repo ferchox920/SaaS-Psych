@@ -4,6 +4,7 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
+import Link from "next/link";
 
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { archiveClient, createClient, listArchivedClients, listClients, restoreClient, updateClient } from "@/features/clients/api/clients-api";
 import { ClientFormCard } from "@/features/clients/components/client-form-card";
+import { ClinicalAssignmentsCard } from "@/features/clients/components/clinical-assignments-card";
 import { getClientErrorMessage } from "@/features/clients/lib/client-error-messages";
 import { ClientFormValues } from "@/features/clients/schemas/client-schema";
 export function ClientsView() {
@@ -136,21 +138,23 @@ export function ClientsView() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <Badge variant="outline">Clients</Badge>
-        <h2 className="text-3xl font-semibold">Clientes</h2>
+        <Badge variant="outline">Pacientes</Badge>
+        <h2 className="text-3xl font-semibold">Pacientes</h2>
         <p className="text-muted-foreground">
 		  Los pacientes se muestran según asignación clínica. Archivar preserva citas, notas e identificadores.
         </p>
       </header>
+
+      {activeClient ? <Link className="inline-flex rounded-xl border border-primary px-4 py-3 font-semibold text-primary" href={`/clients/${activeClient.id}/session`}>Abrir sesión clínica de {activeClient.fullname}</Link> : <p className="text-sm text-muted-foreground">Selecciona un paciente para abrir su sesión clínica.</p>}
 
       <section className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
         <div className="space-y-4">
           <Card>
             <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <CardTitle>Base de clientes</CardTitle>
+                <CardTitle>Pacientes registrados</CardTitle>
                 <CardDescription>
-                  Selecciona un cliente para editarlo o crea uno nuevo desde el panel lateral.
+                  Selecciona un paciente para consultar o actualizar su ficha.
                 </CardDescription>
               </div>
               <Button
@@ -159,7 +163,7 @@ export function ClientsView() {
                 variant="secondary"
               >
                 <UserPlus className="size-4" />
-                Nuevo cliente
+                Nuevo paciente
               </Button>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -227,7 +231,7 @@ export function ClientsView() {
                             </p>
                             <div className="flex flex-wrap gap-2">
                               <Badge variant="outline">
-                                updated {new Date(client.updated_at).toLocaleString()}
+                                Actualizado {new Date(client.updated_at).toLocaleString()}
                               </Badge>
                             </div>
                           </CardContent>
@@ -267,6 +271,8 @@ export function ClientsView() {
           onSubmit={handleSubmit}
         />
       </section>
+
+      {activeClient ? <ClinicalAssignmentsCard key={activeClient.id} clientId={activeClient.id} /> : null}
 
 	  <Card>
 		<CardHeader>

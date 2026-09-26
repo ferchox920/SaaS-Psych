@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS clinical_processes_client_status_page;

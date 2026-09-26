@@ -58,7 +58,7 @@ export function AuditView() {
     return (
       <EmptyState
         title="Acceso restringido"
-        description="La feature de auditoria queda montada dentro del mismo frontend, pero su visibilidad responde al rol owner/admin del backend."
+        description="La auditoría solo está disponible para las personas con permisos de administración."
       />
     );
   }
@@ -66,10 +66,10 @@ export function AuditView() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <Badge variant="outline">Audit</Badge>
-        <h2 className="text-3xl font-semibold">Auditoria</h2>
+        <Badge variant="outline">Trazabilidad</Badge>
+        <h2 className="text-3xl font-semibold">Auditoría</h2>
         <p className="text-muted-foreground">
-          Trazabilidad operativa con filtros y paginacion por cursor sobre el endpoint protegido de `apps/api`.
+          Consulta quién realizó cada cambio y cuándo ocurrió. Filtra los eventos para encontrar una decisión concreta.
         </p>
       </header>
 
@@ -82,7 +82,7 @@ export function AuditView() {
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="actionPrefix">Action prefix</Label>
+            <Label htmlFor="actionPrefix">Prefijo de acción</Label>
             <Input
               id="actionPrefix"
               placeholder="client. o appointment."
@@ -97,7 +97,7 @@ export function AuditView() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="entity">Entity</Label>
+            <Label htmlFor="entity">Entidad</Label>
             <Input
               id="entity"
               placeholder="client, appointment, session_note"
@@ -112,7 +112,7 @@ export function AuditView() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="limit">Limit</Label>
+            <Label htmlFor="limit">Resultados por página</Label>
             <select
               id="limit"
               className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 py-2 text-sm shadow-sm outline-none transition focus-visible:ring-4 focus-visible:ring-ring"
@@ -131,7 +131,7 @@ export function AuditView() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="from">From</Label>
+            <Label htmlFor="from">Desde</Label>
             <Input
               id="from"
               type="datetime-local"
@@ -146,7 +146,7 @@ export function AuditView() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="to">To</Label>
+            <Label htmlFor="to">Hasta</Label>
             <Input
               id="to"
               type="datetime-local"
@@ -161,7 +161,7 @@ export function AuditView() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="order">Order</Label>
+            <Label htmlFor="order">Orden</Label>
             <select
               id="order"
               className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 py-2 text-sm shadow-sm outline-none transition focus-visible:ring-4 focus-visible:ring-ring"
@@ -209,7 +209,7 @@ export function AuditView() {
 
         {auditQuery.isError ? (
           <EmptyState
-            title="No se pudo cargar la auditoria"
+            title="No se pudo cargar la auditoría"
             description={getAuditErrorMessage(auditQuery.error)}
           />
         ) : null}

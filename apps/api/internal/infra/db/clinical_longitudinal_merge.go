@@ -36,7 +36,7 @@ func (r *ClinicalLongitudinalRepository) Merge(ctx context.Context, in longitudi
 		return longitudinal.Diff{}, err
 	}
 	if status == "merged" {
-		if err = tx.Commit(ctx); err != nil {
+		if err := tx.Commit(ctx); err != nil {
 			return longitudinal.Diff{}, err
 		}
 		return r.GetDiff(ctx, in.TenantID, in.DiffID)
@@ -86,10 +86,10 @@ func (r *ClinicalLongitudinalRepository) Merge(ctx context.Context, in longitudi
 		if op.review == "modified" {
 			payload = op.human
 		}
-		if err = longitudinal.ValidateProposal(op.kind, payload); err != nil {
+		if err := longitudinal.ValidateProposal(op.kind, payload); err != nil {
 			return longitudinal.Diff{}, err
 		}
-		if err = r.applyLongitudinalOperation(ctx, tx, in, client, runID, op.id, op.kind, op.target, op.expected, payload, op.review == "modified"); err != nil {
+		if err := r.applyLongitudinalOperation(ctx, tx, in, client, runID, op.id, op.kind, op.target, op.expected, payload, op.review == "modified"); err != nil {
 			return longitudinal.Diff{}, err
 		}
 	}
@@ -100,10 +100,10 @@ func (r *ClinicalLongitudinalRepository) Merge(ctx context.Context, in longitudi
 	if _, err = tx.Exec(ctx, `UPDATE clinical_diffs SET status='merged',merged_by_user_id=$3,merged_at=NOW(),merged_state_version=$4,revision=revision+1,updated_at=NOW() WHERE tenant_id=$1 AND id=$2`, in.TenantID, in.DiffID, in.ActorID, newHead); err != nil {
 		return longitudinal.Diff{}, err
 	}
-	if err = insertAuditEvent(ctx, tx, in.TenantID, in.ActorID, "clinical_diff.merged", "clinical_diff", in.DiffID, map[string]any{"operation_count": len(ops), "from_state_version": head, "to_state_version": newHead}); err != nil {
+	if err := insertAuditEvent(ctx, tx, in.TenantID, in.ActorID, "clinical_diff.merged", "clinical_diff", in.DiffID, map[string]any{"operation_count": len(ops), "from_state_version": head, "to_state_version": newHead}); err != nil {
 		return longitudinal.Diff{}, err
 	}
-	if err = tx.Commit(ctx); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return longitudinal.Diff{}, err
 	}
 	return r.GetDiff(ctx, in.TenantID, in.DiffID)
@@ -289,7 +289,7 @@ func (r *ClinicalLongitudinalRepository) applyLongitudinalOperation(ctx context.
 			action = "clinical_process.reopened"
 		}
 		var oldV int
-		err := tx.QueryRow(ctx, `UPDATE clinical_processes SET clinical_status=$5,closed_at=CASE WHEN $5='closed' THEN $6 ELSE NULL END,opened_at=CASE WHEN $5<>'closed' THEN $6 ELSE opened_at END,version=version+1,updated_at=NOW() WHERE tenant_id=$1 AND client_id=$2 AND id=$3 AND version=$4 AND approval_status='approved' RETURNING version-1`, in.TenantID, client, target, *expected, targetStatus, now).Scan(&oldV)
+		err := tx.QueryRow(ctx, `UPDATE clinical_processes SET clinical_status=$5::text,closed_at=CASE WHEN $5::text='closed' THEN $6::timestamptz ELSE NULL END,opened_at=CASE WHEN $5::text<>'closed' THEN $6::timestamptz ELSE opened_at END,version=version+1,updated_at=NOW() WHERE tenant_id=$1 AND client_id=$2 AND id=$3 AND version=$4 AND approval_status='approved' RETURNING version-1`, in.TenantID, client, target, *expected, targetStatus, now).Scan(&oldV)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domainerrors.ErrConflict
 		}
@@ -441,27 +441,30 @@ func (r *ClinicalLongitudinalRepository) applyLongitudinalOperation(ctx context.
 			return err
 		}
 		newConfidence := oldConfidence
-		newClinical := oldClinical
+		var newClinical string
 		action = "clinical_hypothesis.updated"
-		if kind == "strengthen_hypothesis" {
-			if oldConfidence == "red" {
+		switch kind {
+		case "strengthen_hypothesis":
+			switch oldConfidence {
+			case "red":
 				newConfidence = "yellow"
-			} else if oldConfidence == "yellow" {
+			case "yellow":
 				newConfidence = "green"
-			} else {
+			default:
 				return domainerrors.ErrConflict
 			}
 			newClinical = "active"
-		} else if kind == "weaken_hypothesis" {
-			if oldConfidence == "green" {
+		case "weaken_hypothesis":
+			switch oldConfidence {
+			case "green":
 				newConfidence = "yellow"
-			} else if oldConfidence == "yellow" {
+			case "yellow":
 				newConfidence = "red"
-			} else {
+			default:
 				return domainerrors.ErrConflict
 			}
 			newClinical = "weakened"
-		} else {
+		default:
 			newClinical = "retired"
 			action = "clinical_hypothesis.retired"
 		}
@@ -475,7 +478,14 @@ func (r *ClinicalLongitudinalRepository) applyLongitudinalOperation(ctx context.
 		toStatus = newClinical + ":" + newConfidence
 		entity = "hypothesis"
 	default:
-		return domainerrors.NewValidation("unsupported longitudinal operation")
+		strategyResult, recognized, strategyErr := r.applyStrategyOperation(ctx, tx, in, client, runID, kind, target, expected, payload, now)
+		if strategyErr != nil {
+			return strategyErr
+		}
+		if !recognized {
+			return domainerrors.NewValidation("unsupported longitudinal operation")
+		}
+		entity, action, toStatus, fromStatus, fromVersion, toVersion = strategyResult.entity, strategyResult.action, strategyResult.toStatus, strategyResult.fromStatus, strategyResult.fromVersion, strategyResult.toVersion
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO clinical_longitudinal_transitions(tenant_id,client_id,diff_id,operation_id,entity_type,entity_id,action,from_version,to_version,from_status,to_status,actor_user_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, in.TenantID, client, in.DiffID, opID, entity, target, kind, fromVersion, toVersion, nilIfEmpty(fromStatus), nilIfEmpty(toStatus), in.ActorID); err != nil {
 		return err

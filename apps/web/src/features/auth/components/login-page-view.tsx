@@ -9,15 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { LoginForm } from "@/features/auth/components/login-form";
 import { useSession } from "@/features/auth/hooks/use-session";
 
-export function LoginPageView({ next }: { next: string }) {
+export function LoginPageView({ next, demoIdentity }: { next: string; demoIdentity?: { tenantId: string; email: string } }) {
   const router = useRouter();
   const { clearFeedback, feedback, status } = useSession();
 
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      router.replace(next);
     }
-  }, [router, status]);
+  }, [next, router, status]);
 
   useEffect(() => {
     return () => {
@@ -30,32 +30,32 @@ export function LoginPageView({ next }: { next: string }) {
       <div className="mx-auto grid min-h-screen max-w-[1400px] items-center gap-10 px-4 py-10 lg:grid-cols-[1.1fr_520px] lg:px-8">
         <section className="rounded-[36px] border border-white/60 bg-[linear-gradient(135deg,rgba(58,110,165,0.12),rgba(221,245,240,0.9),rgba(255,255,255,0.92))] p-8 shadow-[0_30px_120px_-60px_rgba(29,41,57,0.55)] backdrop-blur md:p-12">
           <Badge variant="outline" className="mb-6">
-            SessionFlow MVP
+            SessionFlow
           </Badge>
+          {demoIdentity ? <Badge variant="outline" className="mb-6 ml-2 border-red-300 bg-red-50 text-red-900">Demo simulada · solo datos ficticios</Badge> : null}
           <div className="max-w-2xl space-y-6">
             <h1 className="text-4xl font-semibold tracking-tight text-foreground md:text-6xl">
-              Cliente profesional y admin sobre un backend multi-tenant ya operativo.
+              Tu espacio para organizar sesiones y revisar información clínica.
             </h1>
             <p className="text-lg leading-8 text-muted-foreground">
-              Esta base deja listo el shell, los providers y la estructura por features para construir login, agenda,
-              clientes, notas y auditoria sin mezclar responsabilidades con `apps/api`.
+              Trabaja con pacientes, citas y registros desde una cuenta asignada. Las sugerencias de IA permanecen separadas de las decisiones profesionales.
             </p>
           </div>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <Highlight icon={<KeyRound className="size-5" />} title="Auth + tenant header" description="El frontend modela `X-Tenant-ID` como parte de la sesion." />
-            <Highlight icon={<LayoutGrid className="size-5" />} title="Feature slices" description="Cada dominio web tiene su API, componentes y hooks." />
-            <Highlight icon={<Users className="size-5" />} title="Un solo frontend" description="Base comun para profesionales y admin dentro del mismo cliente." />
+            <Highlight icon={<KeyRound className="size-5" />} title="Acceso por organización" description="Tus datos permanecen dentro de la organización seleccionada." />
+            <Highlight icon={<LayoutGrid className="size-5" />} title="Trabajo organizado" description="Citas, sesiones e informes conectados en un mismo recorrido." />
+            <Highlight icon={<Users className="size-5" />} title="Revisión humana" description="La información clínica requiere decisión profesional explícita." />
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          {demoIdentity ? <div className="mt-8 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
             <span>Tenant demo:</span>
             <code className="rounded-full bg-white px-3 py-1 font-mono text-foreground">
-              11111111-1111-1111-1111-111111111111
+              {demoIdentity.tenantId}
             </code>
             <span>Owner:</span>
-            <code className="rounded-full bg-white px-3 py-1 font-mono text-foreground">owner@tenant-a.local</code>
-          </div>
+            <code className="rounded-full bg-white px-3 py-1 font-mono text-foreground">{demoIdentity.email}</code>
+          </div> : null}
 
           {feedback ? (
             <div className="mt-6 rounded-[28px] border border-border/70 bg-white/75 px-5 py-4 text-sm text-foreground">
@@ -68,7 +68,7 @@ export function LoginPageView({ next }: { next: string }) {
               href="/dashboard"
               className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
             >
-              Explorar la estructura base
+              Ir al panel
               <ArrowRight className="size-4" />
             </Link>
           </div>

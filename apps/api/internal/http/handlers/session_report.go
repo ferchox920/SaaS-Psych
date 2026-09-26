@@ -23,6 +23,9 @@ type updateSessionReportRequest struct {
 	ExpectedRevision int                    `json:"expected_revision"`
 	Report           sessionreport.ReportV1 `json:"report"`
 }
+type approveSessionReportRequest struct {
+	ExpectedRevision int `json:"expected_revision"`
+}
 
 func (h *SessionReportHandler) Generate(c echo.Context) error {
 	tenantID, principal, sessionID, err := clinicalSessionContext(c, "id")
@@ -93,7 +96,11 @@ func (h *SessionReportHandler) Approve(c echo.Context) error {
 	if err != nil {
 		return writeAPIError(c, http.StatusBadRequest, "validation_error", "report_id must be a valid uuid")
 	}
-	item, err := h.service.Approve(c.Request().Context(), tenantID, id, principal.UserID)
+	var req approveSessionReportRequest
+	if err := c.Bind(&req); err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "invalid request body")
+	}
+	item, err := h.service.Approve(c.Request().Context(), tenantID, id, principal.UserID, req.ExpectedRevision)
 	if err != nil {
 		return handleSessionReportError(c, err)
 	}

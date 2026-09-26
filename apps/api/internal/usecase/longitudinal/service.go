@@ -13,6 +13,7 @@ import (
 	"sessionflow/apps/api/internal/usecase/approvedcontext"
 	"sessionflow/apps/api/internal/usecase/clinicalairun"
 	"sessionflow/apps/api/internal/usecase/clinicalanalysis"
+	"sessionflow/apps/api/internal/usecase/consent"
 )
 
 type Repository interface {
@@ -22,12 +23,22 @@ type Repository interface {
 	ListEvidence(context.Context, uuid.UUID, uuid.UUID) ([]Evidence, error)
 	ListEvents(context.Context, uuid.UUID, uuid.UUID) ([]Event, error)
 	ListProcesses(context.Context, uuid.UUID, uuid.UUID) ([]Process, error)
+	GetProcess(context.Context, uuid.UUID, uuid.UUID) (Process, error)
 	ListHypotheses(context.Context, uuid.UUID, uuid.UUID) ([]Hypothesis, error)
+	ListTargets(context.Context, uuid.UUID, uuid.UUID) ([]Target, error)
+	ListGoals(context.Context, uuid.UUID, uuid.UUID) ([]Goal, error)
+	ListGIRAs(context.Context, uuid.UUID, uuid.UUID) ([]GIRA, error)
+	GetGIRA(context.Context, uuid.UUID, uuid.UUID) (GIRA, error)
+	ListApproaches(context.Context) ([]ApproachDefinition, error)
+	ListTechniques(context.Context) ([]TechniqueDefinition, error)
+	GetStrategyHistory(context.Context, uuid.UUID, uuid.UUID, string, uuid.UUID) (StrategyHistory, error)
 	State(context.Context, uuid.UUID, uuid.UUID) (State, error)
 	ListDiffs(context.Context, uuid.UUID, uuid.UUID) ([]Diff, error)
 	GetDiff(context.Context, uuid.UUID, uuid.UUID) (Diff, error)
 	Decide(context.Context, DecisionInput) (Diff, error)
 	Merge(context.Context, MergeInput) (Diff, error)
+	GetProcessHistory(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (ProcessHistory, error)
+	GetHypothesisHistory(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (HypothesisHistory, error)
 }
 type ClinicalAccess interface {
 	CanAccessClient(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, ...string) (bool, error)
@@ -43,6 +54,12 @@ type Metrics interface {
 	RecordClinicalDiffCreated(string)
 	RecordClinicalDiffDecision(string, string)
 	RecordClinicalDiffMerge(string)
+	RecordGIRABuild(string, time.Duration)
+	RecordGIRAStage(string, time.Duration)
+	RecordGIRAContextSize(string, int)
+	RecordGIRADiffOperation(string)
+	RecordGIRAVersionCreated()
+	RecordGoalTransition(string)
 }
 type Auditor interface {
 	RecordDomainEvent(context.Context, uuid.UUID, uuid.UUID, string, string, *uuid.UUID, map[string]any) error
@@ -56,11 +73,16 @@ type InterpreterInput struct {
 }
 
 type Service struct {
+	consent             consent.Authorizer
 	repo                Repository
 	access              ClinicalAccess
 	approved            ApprovedContext
 	runs                *clinicalairun.Service
 	provider            Provider
+	giraProvider        GIRABuilderProvider
+	giraProviderName    string
+	giraModel           string
+	giraParameters      map[string]any
 	auditor             Auditor
 	metrics             Metrics
 	providerName, model string
@@ -71,7 +93,8 @@ type Service struct {
 func NewService(repo Repository, access ClinicalAccess, approved ApprovedContext, runs *clinicalairun.Service, provider Provider, auditor Auditor, providerName, model string, parameters map[string]any) *Service {
 	return &Service{repo: repo, access: access, approved: approved, runs: runs, provider: provider, auditor: auditor, providerName: providerName, model: model, parameters: parameters, now: func() time.Time { return time.Now().UTC() }}
 }
-func (s *Service) WithMetrics(m Metrics) *Service { s.metrics = m; return s }
+func (s *Service) WithMetrics(m Metrics) *Service            { s.metrics = m; return s }
+func (s *Service) WithConsent(a consent.Authorizer) *Service { s.consent = a; return s }
 
 func (s *Service) Analyze(ctx context.Context, tenantID, sessionID, actorID uuid.UUID) (out AnalysisOutput, err error) {
 	started := s.now()
@@ -91,8 +114,13 @@ func (s *Service) Analyze(ctx context.Context, tenantID, sessionID, actorID uuid
 	if analysis.Status != "completed" {
 		return out, domainerrors.NewValidation("longitudinal analysis requires a completed clinical session")
 	}
-	if err = s.require(ctx, tenantID, actorID, analysis.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, tenantID, actorID, analysis.ClientID, "treating"); err != nil {
 		return out, err
+	}
+	if s.consent != nil {
+		if _, err = s.consent.Authorize(ctx, tenantID, analysis.ClientID, consent.LocalAI, "longitudinal_analysis", sessionID); err != nil {
+			return out, err
+		}
 	}
 	state, err := s.repo.State(ctx, tenantID, analysis.ClientID)
 	if err != nil {
@@ -130,6 +158,12 @@ func (s *Service) Analyze(ctx context.Context, tenantID, sessionID, actorID uuid
 	result, err := DecodeInterpreterResult(providerOut.JSON)
 	if err != nil {
 		return out, fmt.Errorf("invalid longitudinal model output: %w", err)
+	}
+	if err = ValidateInterpreterSemantics(analysis.ReportJSON, result); err != nil {
+		return out, fmt.Errorf("invalid longitudinal model semantics: %w", err)
+	}
+	if err = ValidateInterpreterReferences(input, result); err != nil {
+		return out, fmt.Errorf("invalid longitudinal model references: %w", err)
 	}
 	operations := make([]Operation, 0, len(result.Operations))
 	localIDs := map[string]uuid.UUID{}
@@ -173,17 +207,297 @@ func (s *Service) ListEvents(ctx context.Context, t, c, a uuid.UUID) ([]Event, e
 	}
 	return s.repo.ListEvents(ctx, t, c)
 }
+
+type EventPage struct {
+	Items      []Event
+	NextOffset *int
+}
+
+func (s *Service) ListEventsPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (EventPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return EventPage{}, domainerrors.NewValidation("invalid event page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return EventPage{}, err
+	}
+	var items []Event
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListEventsPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]Event, error)
+	}); ok {
+		items, err = repo.ListEventsPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListEvents(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []Event{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return EventPage{}, err
+	}
+	page := EventPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
 func (s *Service) ListProcesses(ctx context.Context, t, c, a uuid.UUID) ([]Process, error) {
 	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
 		return nil, err
 	}
 	return s.repo.ListProcesses(ctx, t, c)
 }
+
+type ProcessPage struct {
+	Items      []Process
+	NextOffset *int
+}
+
+func (s *Service) ListProcessesPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (ProcessPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return ProcessPage{}, domainerrors.NewValidation("invalid process page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return ProcessPage{}, err
+	}
+	var items []Process
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListProcessesPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]Process, error)
+	}); ok {
+		items, err = repo.ListProcessesPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListProcesses(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []Process{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return ProcessPage{}, err
+	}
+	page := ProcessPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
 func (s *Service) ListHypotheses(ctx context.Context, t, c, a uuid.UUID) ([]Hypothesis, error) {
 	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
 		return nil, err
 	}
 	return s.repo.ListHypotheses(ctx, t, c)
+}
+
+type HypothesisPage struct {
+	Items      []Hypothesis
+	NextOffset *int
+}
+
+func (s *Service) ListHypothesesPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (HypothesisPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return HypothesisPage{}, domainerrors.NewValidation("invalid hypothesis page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return HypothesisPage{}, err
+	}
+	var items []Hypothesis
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListHypothesesPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]Hypothesis, error)
+	}); ok {
+		items, err = repo.ListHypothesesPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListHypotheses(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []Hypothesis{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return HypothesisPage{}, err
+	}
+	page := HypothesisPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
+func (s *Service) ListTargets(ctx context.Context, t, c, a uuid.UUID) ([]Target, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return nil, err
+	}
+	return s.repo.ListTargets(ctx, t, c)
+}
+
+type TargetPage struct {
+	Items      []Target
+	NextOffset *int
+}
+
+func (s *Service) ListTargetsPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (TargetPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return TargetPage{}, domainerrors.NewValidation("invalid target page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return TargetPage{}, err
+	}
+	var items []Target
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListTargetsPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]Target, error)
+	}); ok {
+		items, err = repo.ListTargetsPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListTargets(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []Target{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return TargetPage{}, err
+	}
+	page := TargetPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
+func (s *Service) ListGoals(ctx context.Context, t, c, a uuid.UUID) ([]Goal, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return nil, err
+	}
+	return s.repo.ListGoals(ctx, t, c)
+}
+
+type GoalPage struct {
+	Items      []Goal
+	NextOffset *int
+}
+
+func (s *Service) ListGoalsPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (GoalPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return GoalPage{}, domainerrors.NewValidation("invalid goal page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return GoalPage{}, err
+	}
+	var items []Goal
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListGoalsPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]Goal, error)
+	}); ok {
+		items, err = repo.ListGoalsPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListGoals(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []Goal{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return GoalPage{}, err
+	}
+	page := GoalPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
+func (s *Service) ListGIRAs(ctx context.Context, t, c, a uuid.UUID) ([]GIRA, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return nil, err
+	}
+	return s.repo.ListGIRAs(ctx, t, c)
+}
+
+type GIRAPage struct {
+	Items      []GIRA
+	NextOffset *int
+}
+
+func (s *Service) ListGIRAsPage(ctx context.Context, t, c, a uuid.UUID, limit, offset int) (GIRAPage, error) {
+	if limit < 1 || limit > 100 || offset < 0 || offset > 1000000 {
+		return GIRAPage{}, domainerrors.NewValidation("invalid GIRA page")
+	}
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return GIRAPage{}, err
+	}
+	var items []GIRA
+	var err error
+	if repo, ok := s.repo.(interface {
+		ListGIRAsPage(context.Context, uuid.UUID, uuid.UUID, int, int) ([]GIRA, error)
+	}); ok {
+		items, err = repo.ListGIRAsPage(ctx, t, c, limit+1, offset)
+	} else {
+		items, err = s.repo.ListGIRAs(ctx, t, c)
+		if err == nil {
+			if offset >= len(items) {
+				items = []GIRA{}
+			} else {
+				items = items[offset:]
+			}
+		}
+	}
+	if err != nil {
+		return GIRAPage{}, err
+	}
+	page := GIRAPage{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page, nil
+}
+func (s *Service) GetGIRA(ctx context.Context, t, id, a uuid.UUID) (GIRA, error) {
+	g, err := s.repo.GetGIRA(ctx, t, id)
+	if err != nil {
+		return g, err
+	}
+	if err := s.require(ctx, t, a, g.ClientID, "treating", "supervisor"); err != nil {
+		return GIRA{}, err
+	}
+	return g, nil
+}
+func (s *Service) ListApproaches(ctx context.Context) ([]ApproachDefinition, error) {
+	return s.repo.ListApproaches(ctx)
+}
+func (s *Service) ListTechniques(ctx context.Context) ([]TechniqueDefinition, error) {
+	return s.repo.ListTechniques(ctx)
+}
+func (s *Service) GetStrategyHistory(ctx context.Context, t, c uuid.UUID, entityType string, id, a uuid.UUID) (StrategyHistory, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return StrategyHistory{}, err
+	}
+	return s.repo.GetStrategyHistory(ctx, t, c, entityType, id)
 }
 func (s *Service) State(ctx context.Context, t, c, a uuid.UUID) (State, error) {
 	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
@@ -202,7 +516,7 @@ func (s *Service) GetDiff(ctx context.Context, t, id, a uuid.UUID) (Diff, error)
 	if err != nil {
 		return d, err
 	}
-	if err = s.require(ctx, t, a, d.ClientID, "treating", "supervisor"); err != nil {
+	if err := s.require(ctx, t, a, d.ClientID, "treating", "supervisor"); err != nil {
 		return Diff{}, err
 	}
 	return d, nil
@@ -212,11 +526,11 @@ func (s *Service) Decide(ctx context.Context, in DecisionInput) (Diff, error) {
 	if err != nil {
 		return d, err
 	}
-	if err = s.require(ctx, in.TenantID, in.ActorID, d.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, in.TenantID, in.ActorID, d.ClientID, "treating"); err != nil {
 		return Diff{}, err
 	}
 	if in.Decision == "modified" {
-		if err = ValidateProposal(operationType(d.Operations, in.OperationID), in.Modification); err != nil {
+		if err := ValidateProposal(operationType(d.Operations, in.OperationID), in.Modification); err != nil {
 			return Diff{}, err
 		}
 	} else if len(in.Modification) > 0 {
@@ -236,14 +550,39 @@ func (s *Service) Merge(ctx context.Context, in MergeInput) (Diff, error) {
 	if in.ActorID == uuid.Nil {
 		return Diff{}, domainerrors.ErrForbidden
 	}
-	if err = s.require(ctx, in.TenantID, in.ActorID, d.ClientID, "treating"); err != nil {
+	if err := s.require(ctx, in.TenantID, in.ActorID, d.ClientID, "treating"); err != nil {
 		return Diff{}, err
 	}
 	out, err := s.repo.Merge(ctx, in)
 	if s.metrics != nil {
 		s.metrics.RecordClinicalDiffMerge(result(err))
+		if err == nil && d.Status != "merged" && out.Status == "merged" {
+			for _, op := range d.Operations {
+				if op.ReviewStatus != "approved" && op.ReviewStatus != "modified" {
+					continue
+				}
+				switch op.OperationType {
+				case "create_gira":
+					s.metrics.RecordGIRAVersionCreated()
+				case "activate_goal", "pause_goal", "achieve_goal", "abandon_goal":
+					s.metrics.RecordGoalTransition(strings.TrimSuffix(op.OperationType, "_goal"))
+				}
+			}
+		}
 	}
 	return out, err
+}
+func (s *Service) GetProcessHistory(ctx context.Context, t, c, id, a uuid.UUID) (ProcessHistory, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return ProcessHistory{}, err
+	}
+	return s.repo.GetProcessHistory(ctx, t, c, id)
+}
+func (s *Service) GetHypothesisHistory(ctx context.Context, t, c, id, a uuid.UUID) (HypothesisHistory, error) {
+	if err := s.require(ctx, t, a, c, "treating", "supervisor"); err != nil {
+		return HypothesisHistory{}, err
+	}
+	return s.repo.GetHypothesisHistory(ctx, t, c, id)
 }
 func (s *Service) require(ctx context.Context, t, a, c uuid.UUID, rel ...string) error {
 	if t == uuid.Nil || a == uuid.Nil || c == uuid.Nil {
@@ -273,6 +612,9 @@ func result(err error) string {
 	return "error"
 }
 func longitudinalErrorCode(err error) string {
+	if code := clinicalanalysis.NormalizedProviderErrorCode(err); code != "" {
+		return code
+	}
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "cancelled"

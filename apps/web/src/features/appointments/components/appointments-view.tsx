@@ -20,6 +20,7 @@ import {
 import { AppointmentFormCard } from "@/features/appointments/components/appointment-form-card";
 import { GoogleCalendarCard } from "@/features/appointments/components/google-calendar-card";
 import { getAppointmentErrorMessage } from "@/features/appointments/lib/appointment-error-messages";
+import { ApiError } from "@/lib/http/api-client";
 import { AppointmentFormValues } from "@/features/appointments/schemas/appointment-schema";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { listClients } from "@/features/clients/api/clients-api";
@@ -111,12 +112,13 @@ export function AppointmentsView() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ appointmentId, values }: { appointmentId: string; values: AppointmentFormValues }) =>
+    mutationFn: ({ appointmentId, expectedRevision, values }: { appointmentId: string; expectedRevision: number; values: AppointmentFormValues }) =>
       authenticatedRequest((session) =>
         updateAppointment(session, appointmentId, {
           starts_at: values.starts_at,
           ends_at: values.ends_at,
           location: values.location ?? "",
+          expected_revision: expectedRevision,
         }),
       ),
     onSuccess: async (appointment) => {
@@ -126,8 +128,8 @@ export function AppointmentsView() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (appointmentId: string) =>
-      authenticatedRequest((session) => cancelAppointment(session, appointmentId)),
+    mutationFn: ({ appointmentId, expectedRevision }: { appointmentId: string; expectedRevision: number }) =>
+      authenticatedRequest((session) => cancelAppointment(session, appointmentId, expectedRevision)),
     onSuccess: async (appointment) => {
       toast.success("Cita cancelada.");
       await refreshAppointments(appointment.id);
@@ -138,15 +140,20 @@ export function AppointmentsView() {
   const mutationErrorMessage = mutationError ? getAppointmentErrorMessage(mutationError) : null;
 
   const handleSubmit = async (values: AppointmentFormValues) => {
-    if (activeAppointment) {
-      await updateMutation.mutateAsync({
-        appointmentId: activeAppointment.id,
-        values,
-      });
-      return;
-    }
+    try {
+      if (activeAppointment) {
+        await updateMutation.mutateAsync({
+          appointmentId: activeAppointment.id,
+          expectedRevision: activeAppointment.revision,
+          values,
+        });
+        return;
+      }
 
-    await createMutation.mutateAsync(values);
+      await createMutation.mutateAsync(values);
+    } catch {
+      // The mutation retains the error for the form to display.
+    }
   };
 
   const handleCancelAppointment = async () => {
@@ -154,16 +161,20 @@ export function AppointmentsView() {
       return;
     }
 
-    await cancelMutation.mutateAsync(activeAppointment.id);
+    try {
+      await cancelMutation.mutateAsync({ appointmentId: activeAppointment.id, expectedRevision: activeAppointment.revision });
+    } catch {
+      // The mutation retains the error for the form to display.
+    }
   };
 
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <Badge variant="outline">Appointments</Badge>
+        <Badge variant="outline">Agenda</Badge>
         <h2 className="text-3xl font-semibold">Agenda</h2>
         <p className="text-muted-foreground">
-          Agenda end-to-end del MVP: filtro por rango, alta, edicion y cancelacion sobre el contrato actual del backend.
+          Consulta, crea, edita y cancela citas con los pacientes asignados.
         </p>
       </header>
 
@@ -182,7 +193,7 @@ export function AppointmentsView() {
                 <div>
                   <CardTitle>Turnos del rango activo</CardTitle>
                   <CardDescription>
-                    El backend exige `from` y `to` en RFC3339 para listar. Esta vista trabaja sobre esa restriccion.
+                    Filtra las citas por fecha o busca un paciente y su ubicación.
                   </CardDescription>
                 </div>
                 <Button onClick={() => setActiveAppointmentId(null)} type="button" variant="secondary">
@@ -307,7 +318,25 @@ export function AppointmentsView() {
           </Card>
         </div>
 
-        <AppointmentFormCard
+        <div className="space-y-3">
+          {activeAppointment && activeAppointment.status !== "canceled" ? (
+            <Link
+              className="inline-flex text-sm font-medium text-primary underline"
+              href={`/clients/${activeAppointment.client_id}/session?appointmentId=${activeAppointment.id}`}
+            >
+              Abrir sesión clínica de esta cita
+            </Link>
+          ) : null}
+          {mutationError instanceof ApiError && mutationError.status === 409 && (
+            <Button variant="outline" onClick={() => {
+              updateMutation.reset();
+              cancelMutation.reset();
+              void refreshAppointments();
+            }}>
+              Recargar agenda
+            </Button>
+          )}
+          <AppointmentFormCard
           activeAppointment={activeAppointment}
           clients={clients}
           errorMessage={mutationErrorMessage}
@@ -321,7 +350,8 @@ export function AppointmentsView() {
             setActiveAppointmentId(null);
           }}
           onSubmit={handleSubmit}
-        />
+          />
+        </div>
       </section>
     </div>
   );

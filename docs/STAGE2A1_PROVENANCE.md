@@ -22,4 +22,6 @@ The service currently selects at most 10 approved reports. Thus histories of 10,
 
 New reports use `session-report-v1.1`. Every list item has a report-local, non-PHI ID such as `fact-001` or `hypothesis-001`; IDs must be unique and do not depend on array position. Edits carry existing IDs forward, while the service assigns an ID above every identity present in the stored report to a new item whose ID is omitted. Deleted identities are therefore never recycled within that report's edit lineage.
 
+`inference_candidates[].evidence_refs` and `hypothesis_candidates[].evidence_refs` may point only to existing `fact`, `change`, `response`, or `affect` items in the same report. Interventions describe treatment activity, not evidence about the patient. Duplicate or dangling references are rejected on generation and edit; an item still referenced cannot be deleted until its references are revised. Interpretive candidates cannot be evidence for one another. This is structural integrity, not validation of clinical truth. Stored legacy reports remain readable without retroactive mutation.
+
 Stored `session-report-v1` documents remain readable without rewriting their clinical JSON. Editing an old draft upgrades the stored schema marker and JSON to v1.1. This avoids a bulk clinical-data migration while giving all newly generated or edited reports stable references.

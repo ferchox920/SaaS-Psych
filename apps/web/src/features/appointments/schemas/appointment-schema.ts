@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const appointmentSchema = z
   .object({
-    client_id: z.string().trim().uuid("Selecciona un cliente valido."),
+    client_id: z.string().trim().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "Selecciona un cliente valido."),
     starts_at: z.string().min(1, "Selecciona fecha y hora de inicio."),
     ends_at: z.string().min(1, "Selecciona fecha y hora de fin."),
     location: z.string().trim().max(160, "La ubicacion es demasiado larga.").optional().or(z.literal("")),

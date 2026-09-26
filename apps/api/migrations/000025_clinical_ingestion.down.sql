@@ -1,0 +1,12 @@
+DROP TABLE clinical_ingestion_run_attempts;
+DROP TABLE clinical_ingestion_results;
+DROP TABLE clinical_ingestion_authorizations;
+DROP TABLE clinical_ingestion_job_attempts;
+DROP TABLE clinical_ingestion_jobs;
+DROP TABLE clinical_transcript_versions;
+DROP TABLE clinical_session_artifacts;
+DROP TABLE clinical_consent_grants;
+DROP TABLE clinical_consent_definitions;
+DROP FUNCTION IF EXISTS validate_clinical_ingestion_source();
+DROP FUNCTION IF EXISTS protect_clinical_transcript_version();
+DROP FUNCTION IF EXISTS protect_clinical_consent_grant();

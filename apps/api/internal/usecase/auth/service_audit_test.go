@@ -20,6 +20,7 @@ type fakeAuthRepository struct {
 	email     string
 	byHash    map[string]StoredRefreshToken
 	byHashMtx sync.Mutex
+	createErr error
 }
 
 func (r *fakeAuthRepository) GetUserByEmail(_ context.Context, tenantID uuid.UUID, email string) (User, error) {
@@ -39,11 +40,41 @@ func (r *fakeAuthRepository) GetUserRole(_ context.Context, tenantID, userID uui
 func (r *fakeAuthRepository) CreateRefreshToken(_ context.Context, token RefreshTokenWrite) error {
 	r.byHashMtx.Lock()
 	defer r.byHashMtx.Unlock()
+	if r.createErr != nil {
+		return r.createErr
+	}
 	r.byHash[token.TokenHash] = StoredRefreshToken{
 		UserID:    token.UserID,
 		ExpiresAt: token.ExpiresAt,
 	}
 	return nil
+}
+
+func TestRefreshRollsBackOldTokenWhenReplacementCannotBeStored(t *testing.T) {
+	t.Parallel()
+
+	tenantID, userID := uuid.New(), uuid.New()
+	oldPlain := "synthetic-old-refresh-token"
+	oldHash := HashRefreshToken(oldPlain)
+	repo := &fakeAuthRepository{
+		user:      User{ID: userID},
+		role:      "owner",
+		tenantID:  tenantID,
+		byHash:    map[string]StoredRefreshToken{oldHash: {UserID: userID, ExpiresAt: time.Now().UTC().Add(time.Hour)}},
+		createErr: errors.New("synthetic insert failure"),
+	}
+	service := NewService(repo, NewTokenService("test-secret", 15*time.Minute), 30*24*time.Hour, nil)
+
+	if _, err := service.Refresh(context.Background(), tenantID, oldPlain); err == nil {
+		t.Fatal("expected replacement storage failure")
+	}
+	stored, err := repo.GetRefreshToken(context.Background(), tenantID, oldHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.RevokedAt != nil {
+		t.Fatal("old refresh token was revoked even though replacement storage rolled back")
+	}
 }
 
 func (r *fakeAuthRepository) GetRefreshToken(_ context.Context, tenantID uuid.UUID, tokenHash string) (StoredRefreshToken, error) {
@@ -57,6 +88,28 @@ func (r *fakeAuthRepository) GetRefreshToken(_ context.Context, tenantID uuid.UU
 		return StoredRefreshToken{}, domainerrors.ErrNotFound
 	}
 	return token, nil
+}
+
+func (r *fakeAuthRepository) RotateRefreshToken(_ context.Context, tenantID uuid.UUID, oldTokenHash string, replacement RefreshTokenWrite, now time.Time) error {
+	if tenantID != r.tenantID {
+		return domainerrors.ErrNotFound
+	}
+	r.byHashMtx.Lock()
+	defer r.byHashMtx.Unlock()
+	old, ok := r.byHash[oldTokenHash]
+	if !ok {
+		return domainerrors.ErrNotFound
+	}
+	if old.RevokedAt != nil || !old.ExpiresAt.After(now) || replacement.TenantID != tenantID || replacement.UserID != old.UserID {
+		return domainerrors.ErrUnauthorized
+	}
+	if r.createErr != nil {
+		return r.createErr
+	}
+	old.RevokedAt = &now
+	r.byHash[oldTokenHash] = old
+	r.byHash[replacement.TokenHash] = StoredRefreshToken{UserID: replacement.UserID, ExpiresAt: replacement.ExpiresAt}
+	return nil
 }
 
 func (r *fakeAuthRepository) RevokeRefreshToken(_ context.Context, tenantID uuid.UUID, tokenHash string) error {

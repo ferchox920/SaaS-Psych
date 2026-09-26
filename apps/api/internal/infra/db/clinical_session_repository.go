@@ -63,8 +63,19 @@ func (r *ClinicalSessionRepository) GetByID(ctx context.Context, tenantID, sessi
 	return item, err
 }
 func (r *ClinicalSessionRepository) ListByClient(ctx context.Context, tenantID, clientID uuid.UUID) ([]domainclinicalsession.Entity, error) {
-	const query = `SELECT id, tenant_id, client_id, appointment_id, therapist_user_id, status, started_at, ended_at, created_at, updated_at FROM clinical_sessions WHERE tenant_id = $1 AND client_id = $2 ORDER BY started_at DESC, id DESC`
-	rows, err := r.pool.Query(ctx, query, tenantID, clientID)
+	return r.listByClient(ctx, tenantID, clientID, 0, 0)
+}
+func (r *ClinicalSessionRepository) ListByClientPage(ctx context.Context, tenantID, clientID uuid.UUID, limit, offset int) ([]domainclinicalsession.Entity, error) {
+	return r.listByClient(ctx, tenantID, clientID, limit, offset)
+}
+func (r *ClinicalSessionRepository) listByClient(ctx context.Context, tenantID, clientID uuid.UUID, limit, offset int) ([]domainclinicalsession.Entity, error) {
+	query := `SELECT id, tenant_id, client_id, appointment_id, therapist_user_id, status, started_at, ended_at, created_at, updated_at FROM clinical_sessions WHERE tenant_id = $1 AND client_id = $2 ORDER BY started_at DESC, id DESC`
+	args := []any{tenantID, clientID}
+	if limit > 0 {
+		query += ` LIMIT $3 OFFSET $4`
+		args = append(args, limit, offset)
+	}
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

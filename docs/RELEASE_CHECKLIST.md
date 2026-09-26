@@ -63,7 +63,7 @@ golangci-lint run --config .golangci.yml --timeout=3m
 ### B. Integracion Postgres/Redis
 
 - [ ] Servicios arriba: Postgres + Redis.
-- [ ] No hay contenedores legacy ocupando `5432`/`6379`.
+- [ ] No hay contenedores legacy ocupando los puertos publicados `5433`/`6379` (PostgreSQL escucha en `5432` dentro del contenedor).
 - [ ] Preflight local valida credenciales/estado de Postgres y respuesta de Redis.
 - [ ] Migraciones aplicadas.
 - [ ] Tests con `RUN_PG_INTEGRATION=1` pasan con el mismo alcance que CI (`./internal/http ./internal/infra/db`).
@@ -89,7 +89,7 @@ make integration-preflight
 Si falla por conflicto de contenedores legacy o puertos ocupados, limpiar primero el host:
 
 ```bash
-docker ps --filter publish=5432 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
+docker ps --filter publish=5433 --filter publish=6379 --format "table {{.Names}}\t{{.Ports}}"
 docker compose down --remove-orphans
 ```
 

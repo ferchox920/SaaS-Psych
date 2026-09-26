@@ -18,7 +18,7 @@ export function getAppointmentErrorMessage(error: unknown) {
   }
 
   if (error.code === "conflict") {
-    return "La cita se superpone con otro turno existente.";
+    return "La cita cambió o se superpone con otro turno. Recarga la agenda antes de reintentar.";
   }
 
   if (error.code === "unauthorized") {

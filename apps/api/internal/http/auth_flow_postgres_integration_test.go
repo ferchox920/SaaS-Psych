@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"sessionflow/apps/api/internal/http/handlers"
 	httpmiddleware "sessionflow/apps/api/internal/http/middleware"
 	"sessionflow/apps/api/internal/infra/db"
@@ -24,7 +22,7 @@ func TestAuthFlowPostgresIntegration(t *testing.T) {
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable"
 	}
 
 	ctx := context.Background()
@@ -49,9 +47,8 @@ func TestAuthFlowPostgresIntegration(t *testing.T) {
 		AuthHandler:      authHandler,
 	})
 
-	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	email := "owner@tenant-a.local"
-	password := "ChangeMe123!"
+	tenantID, email, password, cleanup := createAuthPostgresOwner(t, pool)
+	defer cleanup()
 
 	loginResp := struct {
 		AccessToken  string `json:"access_token"`
@@ -111,6 +108,10 @@ func TestAuthFlowPostgresIntegration(t *testing.T) {
 
 	if refreshCookie == nil || refreshCookie.MaxAge >= 0 {
 		t.Fatal("logout must expire refresh cookie")
+	}
+	status, body, refreshCookie = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", nil, nil)
+	if status != stdhttp.StatusNoContent || refreshCookie == nil || refreshCookie.MaxAge >= 0 {
+		t.Fatalf("logout without a cookie must be idempotent and clear it, got status=%d body=%s cookie=%v", status, body, refreshCookie)
 	}
 	status, body, _ = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", nil, activeRefreshCookie)
 	if status != stdhttp.StatusUnauthorized {

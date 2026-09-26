@@ -11,3 +11,8 @@ node_modules/
 apps/web/.env
 apps/web/.env.local
 apps/api/.env
+apps/web/test-results/
+apps/web/playwright-report/
+/output/
+__pycache__/
+*.py[cod]

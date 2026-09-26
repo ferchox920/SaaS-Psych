@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS clinical_hypotheses_client_updated_page;

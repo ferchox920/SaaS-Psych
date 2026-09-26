@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("APP_ENV", "")
@@ -9,6 +12,11 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("HTTP_PORT", "")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("REDIS_URL", "")
+	t.Setenv("OTEL_SERVICE_NAME", "")
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	t.Setenv("OTEL_TRACES_EXPORTER", "")
+	t.Setenv("OTEL_RESOURCE_ATTRIBUTES", "")
+	t.Setenv("OTEL_DB_STATEMENT_ENABLED", "")
 
 	cfg := Load()
 
@@ -26,6 +34,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.RedisURL != "" {
 		t.Fatalf("expected empty REDIS_URL, got %q", cfg.RedisURL)
+	}
+	if cfg.ClinicalGIRAProvider != "none" {
+		t.Fatalf("remote GIRA must be disabled by default, got %q", cfg.ClinicalGIRAProvider)
 	}
 	if cfg.JWTAccessSecret != "change-me" {
 		t.Fatalf("expected default JWT_ACCESS_SECRET, got %q", cfg.JWTAccessSecret)
@@ -56,12 +67,74 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestValidateOpenAIGIRARequiresExplicitCredentialsAndModel(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ClinicalGIRAProvider = "openai"
+	cfg.ExperimentalRemoteGIRA = true
+	cfg.OpenAIBaseURL = "https://api.openai.com"
+	cfg.OpenAIGIRATimeoutSeconds = 180
+	cfg.OpenAIGIRAMaxOutputTokens = 2048
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "CLINICAL_GIRA_MODEL") {
+		t.Fatalf("expected missing model rejection, got %v", err)
+	}
+	cfg.ClinicalGIRAModel = "gpt-test"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY") {
+		t.Fatalf("expected missing key rejection, got %v", err)
+	}
+	cfg.OpenAIAPIKey = "synthetic-key"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected explicit OpenAI config to pass, got %v", err)
+	}
+}
+
+func TestValidateGIRADataControlDoesNotTreatRequestedAsConfirmed(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.ClinicalGIRAProvider = "none"
+	cfg.ClinicalGIRADataControlMode = "zero_data_retention"
+	cfg.ClinicalGIRADataControlStatus = "requested"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("requested is a representable but unconfirmed state: %v", err)
+	}
+	cfg.ClinicalGIRADataControlStatus = "active"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("unverifiable data-control status accepted")
+	}
+}
+
 func TestValidateAllowsDefaultSecretInLocal(t *testing.T) {
 	cfg := validTestConfig()
 	cfg.JWTAccessSecret = defaultJWTAccessSecret
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected local config to allow default secret, got %v", err)
+	}
+}
+
+func TestValidateRejectsMissingRequiredDependenciesOutsideLocal(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.AppEnv = "production"
+	cfg.JWTAccessSecret = "a-production-secret-that-is-not-the-default"
+	cfg.AuthCookieSecure = true
+	cfg.RateLimitLoginPerMin = 10
+	cfg.DatabaseURL = ""
+	cfg.RedisURL = "redis://redis:6379"
+
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "DATABASE_URL") {
+		t.Fatalf("expected missing production database rejection, got %v", err)
+	}
+
+	cfg.DatabaseURL = "postgres://sessionflow:secret@postgres:5432/sessionflow"
+	cfg.RedisURL = ""
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("expected missing production Redis rejection, got %v", err)
+	}
+}
+
+func TestValidateRejectsMalformedTrustedProxyCIDR(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.TrustedProxyCIDRs = "192.0.2.0/24,not-a-cidr"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXY_CIDRS") {
+		t.Fatalf("invalid trusted proxy accepted: %v", err)
 	}
 }
 
@@ -135,6 +208,27 @@ func validTestConfig() Config {
 		OllamaReviewTemperature:     0.15,
 		OllamaReviewTimeoutSeconds:  180,
 		OllamaReviewMaxOutputTokens: 1024,
+		OllamaGIRAContextTokens:     8192,
+		OllamaGIRATemperature:       0,
+		OllamaGIRATimeoutSeconds:    180,
+		OllamaGIRAMaxOutputTokens:   1536,
+		OllamaGIRATopP:              0.8,
+		OllamaGIRATopK:              20,
+		OllamaGIRASeed:              42,
+	}
+}
+
+func TestDemoModeRequiresLocalEnvironment(t *testing.T) {
+	cfg := validTestConfig()
+	cfg.DemoMode = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("local demo mode should be valid: %v", err)
+	}
+	cfg.AppEnv = "production"
+	cfg.DatabaseURL = "postgres://example"
+	cfg.RedisURL = "redis://localhost:6379"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "DEMO_MODE") {
+		t.Fatalf("expected production demo mode to be rejected, got %v", err)
 	}
 }
 

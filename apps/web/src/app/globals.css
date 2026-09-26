@@ -45,6 +45,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
   --font-sans: "Segoe UI", Arial, sans-serif;
   --font-mono: "Cascadia Mono", "Consolas", monospace;
 }

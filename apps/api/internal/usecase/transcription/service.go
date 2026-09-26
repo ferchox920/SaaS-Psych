@@ -10,6 +10,7 @@ import (
 
 	domainappointment "sessionflow/apps/api/internal/domain/appointment"
 	domainerrors "sessionflow/apps/api/internal/domain/errors"
+	"sessionflow/apps/api/internal/usecase/consent"
 )
 
 var (
@@ -60,6 +61,7 @@ type Metrics interface {
 }
 
 type Service struct {
+	consent      consent.Authorizer
 	enabled      bool
 	maxAudioSize int
 	provider     Provider
@@ -77,6 +79,8 @@ type TranscribeInput struct {
 	Format          string
 	Audio           []byte
 }
+
+func (s *Service) WithConsent(a consent.Authorizer) *Service { s.consent = a; return s }
 
 func NewService(enabled bool, maxAudioSize int, provider Provider, appointments AppointmentRepository, access ClinicalAccess, auditor Auditor) *Service {
 	return &Service{enabled: enabled, maxAudioSize: maxAudioSize, provider: provider, appointments: appointments, access: access, auditor: auditor}
@@ -133,6 +137,13 @@ func (s *Service) Transcribe(ctx context.Context, input TranscribeInput) (result
 	}
 	if !allowed {
 		return Result{}, domainerrors.ErrForbidden
+	}
+	if s.consent != nil {
+		for _, scope := range []string{consent.Audio, consent.Transcription} {
+			if _, err = s.consent.Authorize(ctx, input.TenantID, appointment.ClientID, scope, "ephemeral_transcription", input.AppointmentID); err != nil {
+				return Result{}, err
+			}
+		}
 	}
 	if err := s.audit(ctx, input, "clinical_transcription.start", map[string]any{"format": format, "audio_bytes": len(input.Audio), "retained": false}); err != nil {
 		return Result{}, fmt.Errorf("audit transcription start: %w", err)

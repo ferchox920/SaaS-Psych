@@ -69,13 +69,57 @@ type ListInput struct {
 	To          time.Time
 }
 
+type Page struct {
+	Items      []domainappointment.Entity
+	NextOffset *int
+}
+
+func (s *Service) ListPage(ctx context.Context, input ListInput, limit, offset int) (Page, error) {
+	if input.TenantID == uuid.Nil || input.ActorUserID == uuid.Nil || !input.From.Before(input.To) || limit < 1 || limit > 100 || offset < 0 {
+		return Page{}, domainerrors.NewValidation("invalid appointment page request")
+	}
+	if s.access != nil {
+		if repo, ok := s.repo.(interface {
+			ListVisiblePage(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time, int, int) ([]domainappointment.Entity, error)
+		}); ok {
+			items, err := repo.ListVisiblePage(ctx, input.TenantID, input.ActorUserID, input.From.UTC(), input.To.UTC(), limit+1, offset)
+			if err != nil {
+				return Page{}, fmt.Errorf("list visible appointment page: %w", err)
+			}
+			if err := s.recordAudit(ctx, input.TenantID, input.ActorUserID, "appointment.list", "appointment", uuid.Nil, map[string]any{}); err != nil {
+				return Page{}, err
+			}
+			return appointmentPage(items, limit, offset), nil
+		}
+	}
+	items, err := s.ListByRange(ctx, input)
+	if err != nil {
+		return Page{}, err
+	}
+	if offset >= len(items) {
+		return Page{Items: []domainappointment.Entity{}}, nil
+	}
+	return appointmentPage(items[offset:], limit, offset), nil
+}
+
+func appointmentPage(items []domainappointment.Entity, limit, offset int) Page {
+	page := Page{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page
+}
+
 type UpdateInput struct {
-	TenantID      uuid.UUID
-	AppointmentID uuid.UUID
-	ActorUserID   uuid.UUID
-	StartsAt      time.Time
-	EndsAt        time.Time
-	Location      string
+	TenantID         uuid.UUID
+	AppointmentID    uuid.UUID
+	ActorUserID      uuid.UUID
+	StartsAt         time.Time
+	EndsAt           time.Time
+	Location         string
+	ExpectedRevision int64
 }
 
 func NewService(repo Repository, auditor Auditor) *Service {
@@ -150,6 +194,20 @@ func (s *Service) ListByRange(ctx context.Context, input ListInput) ([]domainapp
 	if input.ActorUserID == uuid.Nil {
 		return nil, domainerrors.NewValidation("actor_user_id is required")
 	}
+	if s.access != nil {
+		if visibleRepo, ok := s.repo.(interface {
+			ListVisibleByRange(context.Context, uuid.UUID, uuid.UUID, time.Time, time.Time) ([]domainappointment.Entity, error)
+		}); ok {
+			items, err := visibleRepo.ListVisibleByRange(ctx, input.TenantID, input.ActorUserID, input.From.UTC(), input.To.UTC())
+			if err != nil {
+				return nil, fmt.Errorf("list visible appointments by range: %w", err)
+			}
+			if err := s.recordAudit(ctx, input.TenantID, input.ActorUserID, "appointment.list", "appointment", uuid.Nil, map[string]any{}); err != nil {
+				return nil, fmt.Errorf("audit appointment list: %w", err)
+			}
+			return items, nil
+		}
+	}
 
 	items, err := s.repo.ListByRange(ctx, input.TenantID, input.From.UTC(), input.To.UTC())
 	if err != nil {
@@ -192,6 +250,9 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (domainappointm
 	if err := s.requireClinicalAccess(ctx, input.TenantID, input.ActorUserID, existing.ClientID, "treating"); err != nil {
 		return domainappointment.Entity{}, err
 	}
+	if input.ExpectedRevision > 0 && existing.Revision != input.ExpectedRevision {
+		return domainappointment.Entity{}, domainerrors.ErrConflict
+	}
 
 	if err := existing.Update(input.StartsAt, input.EndsAt, input.Location, s.now()); err != nil {
 		return domainappointment.Entity{}, err
@@ -225,6 +286,17 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (domainappointm
 }
 
 func (s *Service) Cancel(ctx context.Context, tenantID, appointmentID, actorUserID uuid.UUID) (domainappointment.Entity, error) {
+	return s.cancel(ctx, tenantID, appointmentID, actorUserID, 0)
+}
+
+func (s *Service) CancelWithRevision(ctx context.Context, tenantID, appointmentID, actorUserID uuid.UUID, expectedRevision int64) (domainappointment.Entity, error) {
+	if expectedRevision <= 0 {
+		return domainappointment.Entity{}, domainerrors.NewValidation("expected_revision must be positive")
+	}
+	return s.cancel(ctx, tenantID, appointmentID, actorUserID, expectedRevision)
+}
+
+func (s *Service) cancel(ctx context.Context, tenantID, appointmentID, actorUserID uuid.UUID, expectedRevision int64) (domainappointment.Entity, error) {
 	// Design decision: appointments are never hard-deleted from the API.
 	// Clinical history is preserved by transitioning lifecycle state scheduled -> canceled.
 	if tenantID == uuid.Nil {
@@ -247,6 +319,9 @@ func (s *Service) Cancel(ctx context.Context, tenantID, appointmentID, actorUser
 	if err := s.requireClinicalAccess(ctx, tenantID, actorUserID, existing.ClientID, "treating"); err != nil {
 		s.recordCancelMetric(err)
 		return domainappointment.Entity{}, err
+	}
+	if expectedRevision > 0 && existing.Revision != expectedRevision {
+		return domainappointment.Entity{}, domainerrors.ErrConflict
 	}
 	if err := existing.Cancel(s.now()); err != nil {
 		s.recordCancelMetric(err)

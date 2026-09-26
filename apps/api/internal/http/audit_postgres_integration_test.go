@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"sessionflow/apps/api/internal/http/handlers"
 	httpmiddleware "sessionflow/apps/api/internal/http/middleware"
 	"sessionflow/apps/api/internal/infra/db"
@@ -29,7 +27,7 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable"
+		databaseURL = "postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable"
 	}
 
 	ctx := context.Background()
@@ -56,15 +54,16 @@ func TestAuditListPostgresIntegration(t *testing.T) {
 		AuditHandler:             handlers.NewAuditHandler(auditService),
 	})
 
-	tenantID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	tenantID, email, password, cleanup := createAuthPostgresOwner(t, pool)
+	defer cleanup()
 
 	loginResp := struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	}{}
 	status, body, refreshCookie := doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/login", tenantID, "", map[string]string{
-		"email":    "owner@tenant-a.local",
-		"password": "ChangeMe123!",
+		"email":    email,
+		"password": password,
 	}, nil)
 	if status != stdhttp.StatusOK {
 		t.Fatalf("login expected %d, got %d body=%s", stdhttp.StatusOK, status, string(body))

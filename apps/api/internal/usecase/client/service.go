@@ -66,6 +66,55 @@ type UpdateInput struct {
 	NotesPublic string
 }
 
+type Page struct {
+	Items      []domainclient.Entity
+	NextOffset *int
+}
+
+func (s *Service) ListPage(ctx context.Context, tenantID, viewerUserID uuid.UUID, archived bool, limit, offset int) (Page, error) {
+	if tenantID == uuid.Nil || viewerUserID == uuid.Nil || limit < 1 || limit > 100 || offset < 0 {
+		return Page{}, domainerrors.NewValidation("invalid client page request")
+	}
+	if s.access != nil {
+		if repo, ok := s.repo.(interface {
+			ListVisiblePage(context.Context, uuid.UUID, uuid.UUID, bool, int, int) ([]domainclient.Entity, error)
+		}); ok {
+			items, err := repo.ListVisiblePage(ctx, tenantID, viewerUserID, archived, limit+1, offset)
+			if err != nil {
+				return Page{}, fmt.Errorf("list visible client page: %w", err)
+			}
+			if err := s.recordAudit(ctx, tenantID, viewerUserID, "client.list", "client", uuid.Nil, map[string]any{}); err != nil {
+				return Page{}, err
+			}
+			return clientPage(items, limit, offset), nil
+		}
+	}
+	var items []domainclient.Entity
+	var err error
+	if archived {
+		items, err = s.ListArchived(ctx, tenantID, viewerUserID)
+	} else {
+		items, err = s.List(ctx, tenantID, viewerUserID)
+	}
+	if err != nil {
+		return Page{}, err
+	}
+	if offset >= len(items) {
+		return Page{Items: []domainclient.Entity{}}, nil
+	}
+	return clientPage(items[offset:], limit, offset), nil
+}
+
+func clientPage(items []domainclient.Entity, limit, offset int) Page {
+	page := Page{Items: items}
+	if len(items) > limit {
+		page.Items = items[:limit]
+		next := offset + limit
+		page.NextOffset = &next
+	}
+	return page
+}
+
 func NewService(repo Repository, auditor Auditor) *Service {
 	return &Service{repo: repo, auditor: auditor, now: func() time.Time { return time.Now().UTC() }}
 }
@@ -99,6 +148,20 @@ func (s *Service) List(ctx context.Context, tenantID, viewerUserID uuid.UUID) ([
 	if viewerUserID == uuid.Nil {
 		return nil, domainerrors.NewValidation("viewer_user_id is required")
 	}
+	if s.access != nil {
+		if visibleRepo, ok := s.repo.(interface {
+			ListVisible(context.Context, uuid.UUID, uuid.UUID, bool) ([]domainclient.Entity, error)
+		}); ok {
+			items, err := visibleRepo.ListVisible(ctx, tenantID, viewerUserID, false)
+			if err != nil {
+				return nil, fmt.Errorf("list visible clients: %w", err)
+			}
+			if err := s.recordAudit(ctx, tenantID, viewerUserID, "client.list", "client", uuid.Nil, map[string]any{}); err != nil {
+				return nil, fmt.Errorf("audit client list: %w", err)
+			}
+			return items, nil
+		}
+	}
 
 	items, err := s.repo.List(ctx, tenantID)
 	if err != nil {
@@ -130,6 +193,20 @@ func (s *Service) List(ctx context.Context, tenantID, viewerUserID uuid.UUID) ([
 func (s *Service) ListArchived(ctx context.Context, tenantID, viewerUserID uuid.UUID) ([]domainclient.Entity, error) {
 	if tenantID == uuid.Nil || viewerUserID == uuid.Nil {
 		return nil, domainerrors.NewValidation("tenant_id and viewer_user_id are required")
+	}
+	if s.access != nil {
+		if visibleRepo, ok := s.repo.(interface {
+			ListVisible(context.Context, uuid.UUID, uuid.UUID, bool) ([]domainclient.Entity, error)
+		}); ok {
+			items, err := visibleRepo.ListVisible(ctx, tenantID, viewerUserID, true)
+			if err != nil {
+				return nil, fmt.Errorf("list visible archived clients: %w", err)
+			}
+			if err := s.recordAudit(ctx, tenantID, viewerUserID, "client.archived.list", "client", uuid.Nil, map[string]any{}); err != nil {
+				return nil, fmt.Errorf("audit archived client list: %w", err)
+			}
+			return items, nil
+		}
 	}
 	items, err := s.repo.ListArchived(ctx, tenantID)
 	if err != nil {

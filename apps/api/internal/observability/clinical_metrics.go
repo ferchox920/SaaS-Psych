@@ -29,6 +29,13 @@ type ClinicalMetrics struct {
 	diffCreated          *prometheus.CounterVec
 	diffMerges           *prometheus.CounterVec
 	diffDecisions        *prometheus.CounterVec
+	giraBuilds           *prometheus.CounterVec
+	giraBuildSeconds     prometheus.Histogram
+	giraStageSeconds     *prometheus.HistogramVec
+	giraContextBytes     *prometheus.HistogramVec
+	giraDiffOperations   *prometheus.CounterVec
+	giraVersionsCreated  prometheus.Counter
+	goalTransitions      *prometheus.CounterVec
 }
 
 func NewClinicalMetrics(registry prometheus.Registerer) (*ClinicalMetrics, error) {
@@ -56,14 +63,52 @@ func NewClinicalMetrics(registry prometheus.Registerer) (*ClinicalMetrics, error
 		diffCreated:          prometheus.NewCounterVec(prometheus.CounterOpts{Name: "clinical_diff_created_total", Help: "Clinical diffs created by outcome."}, []string{"result"}),
 		diffMerges:           prometheus.NewCounterVec(prometheus.CounterOpts{Name: "clinical_diff_merge_total", Help: "Clinical diff merge attempts by outcome."}, []string{"result"}),
 		diffDecisions:        prometheus.NewCounterVec(prometheus.CounterOpts{Name: "clinical_diff_operation_decision_total", Help: "Clinical diff operation decisions."}, []string{"decision", "result"}),
+		giraBuilds:           prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gira_build_total", Help: "GIRA builder attempts by bounded outcome."}, []string{"result"}),
+		giraBuildSeconds:     prometheus.NewHistogram(prometheus.HistogramOpts{Name: "gira_build_duration_seconds", Help: "GIRA builder duration.", Buckets: []float64{5, 15, 30, 60, 120, 240}}),
+		giraStageSeconds:     prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "gira_build_stage_duration_seconds", Help: "GIRA builder duration by bounded pipeline stage.", Buckets: []float64{0.001, 0.005, 0.02, 0.1, 0.5, 1, 5, 15, 30, 60, 120, 240}}, []string{"stage"}),
+		giraContextBytes:     prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "gira_build_context_bytes", Help: "Serialized GIRA context size by bounded component without content labels.", Buckets: []float64{128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768}}, []string{"component"}),
+		giraDiffOperations:   prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gira_diff_operations_total", Help: "Strategy diff operations proposed by bounded operation type."}, []string{"operation"}),
+		giraVersionsCreated:  prometheus.NewCounter(prometheus.CounterOpts{Name: "gira_version_created_total", Help: "GIRA versions created by an approved human merge."}),
+		goalTransitions:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "goal_transition_total", Help: "Goal lifecycle transitions applied by an approved human merge."}, []string{"transition"}),
 	}
-	collectors := []prometheus.Collector{m.analysisTotal, m.firstTokenSeconds, m.generationSeconds, m.evalTokens, m.evalRate, m.contextCharacters, m.suggestionDecisions, m.transcriptionTotal, m.transcriptionRTF, m.transcriptionSeconds, m.clinicalSessions, m.aiRuns, m.reportGenerations, m.reportSeconds, m.reportApprovals, m.longitudinalAnalysis, m.longitudinalSeconds, m.diffCreated, m.diffMerges, m.diffDecisions}
+	collectors := []prometheus.Collector{m.analysisTotal, m.firstTokenSeconds, m.generationSeconds, m.evalTokens, m.evalRate, m.contextCharacters, m.suggestionDecisions, m.transcriptionTotal, m.transcriptionRTF, m.transcriptionSeconds, m.clinicalSessions, m.aiRuns, m.reportGenerations, m.reportSeconds, m.reportApprovals, m.longitudinalAnalysis, m.longitudinalSeconds, m.diffCreated, m.diffMerges, m.diffDecisions, m.giraBuilds, m.giraBuildSeconds, m.giraStageSeconds, m.giraContextBytes, m.giraDiffOperations, m.giraVersionsCreated, m.goalTransitions}
 	for _, collector := range collectors {
 		if err := registry.Register(collector); err != nil {
 			return nil, err
 		}
 	}
 	return m, nil
+}
+func (m *ClinicalMetrics) RecordGIRABuild(result string, duration time.Duration) {
+	if m != nil {
+		m.giraBuilds.WithLabelValues(result).Inc()
+		m.giraBuildSeconds.Observe(duration.Seconds())
+	}
+}
+func (m *ClinicalMetrics) RecordGIRAStage(stage string, duration time.Duration) {
+	if m != nil {
+		m.giraStageSeconds.WithLabelValues(stage).Observe(duration.Seconds())
+	}
+}
+func (m *ClinicalMetrics) RecordGIRAContextSize(component string, bytes int) {
+	if m != nil {
+		m.giraContextBytes.WithLabelValues(component).Observe(float64(bytes))
+	}
+}
+func (m *ClinicalMetrics) RecordGIRADiffOperation(operation string) {
+	if m != nil {
+		m.giraDiffOperations.WithLabelValues(operation).Inc()
+	}
+}
+func (m *ClinicalMetrics) RecordGIRAVersionCreated() {
+	if m != nil {
+		m.giraVersionsCreated.Inc()
+	}
+}
+func (m *ClinicalMetrics) RecordGoalTransition(transition string) {
+	if m != nil {
+		m.goalTransitions.WithLabelValues(transition).Inc()
+	}
 }
 
 func (m *ClinicalMetrics) RecordLongitudinalAnalysis(result string, duration time.Duration) {

@@ -120,6 +120,26 @@ func (r *integrationAuthRepo) GetRefreshToken(_ context.Context, tenantID uuid.U
 	return token, nil
 }
 
+func (r *integrationAuthRepo) RotateRefreshToken(_ context.Context, tenantID uuid.UUID, oldTokenHash string, replacement authusecase.RefreshTokenWrite, now time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	tokens, ok := r.refreshByHash[tenantID]
+	if !ok {
+		return errors.ErrNotFound
+	}
+	old, ok := tokens[oldTokenHash]
+	if !ok {
+		return errors.ErrNotFound
+	}
+	if old.RevokedAt != nil || !old.ExpiresAt.After(now) || replacement.TenantID != tenantID || replacement.UserID != old.UserID {
+		return errors.ErrUnauthorized
+	}
+	old.RevokedAt = &now
+	tokens[oldTokenHash] = old
+	tokens[replacement.TokenHash] = authusecase.StoredRefreshToken{UserID: replacement.UserID, ExpiresAt: replacement.ExpiresAt}
+	return nil
+}
+
 func (r *integrationAuthRepo) RevokeRefreshToken(_ context.Context, tenantID uuid.UUID, tokenHash string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -236,6 +256,10 @@ func TestAuthFlowIntegration(t *testing.T) {
 
 	if refreshCookie == nil || refreshCookie.MaxAge >= 0 {
 		t.Fatal("logout must expire the refresh cookie")
+	}
+	status, body, refreshCookie = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/logout", tenantID, "", nil, nil)
+	if status != stdhttp.StatusNoContent || refreshCookie == nil || refreshCookie.MaxAge >= 0 {
+		t.Fatalf("logout without a cookie must be idempotent and clear it, got status=%d body=%s cookie=%v", status, body, refreshCookie)
 	}
 	status, body, _ = doJSONRequestWithCookie(t, server, stdhttp.MethodPost, "/api/v1/auth/refresh", tenantID, "", nil, activeRefreshCookie)
 	if status != stdhttp.StatusUnauthorized {

@@ -98,7 +98,7 @@ Objetivo: confirmar si hay degradacion o incidente en curso.
 
 Fuentes:
 - Prometheus: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (admin/admin)
+- Grafana: `http://localhost:3001` (admin/admin). El puerto `3000` queda libre para la web de demo.
 - Dashboard: `SessionFlow API Overview`
 
 Consultas utiles en Prometheus:

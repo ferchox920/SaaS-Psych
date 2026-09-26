@@ -131,6 +131,9 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Check local Compose ports
+        run: node tools/check-compose-ports.mjs
+
       - name: Install dependencies from lockfile
         run: pnpm install --frozen-lockfile
 

@@ -1,6 +1,14 @@
 # Estado de publicación de SessionFlow
 
-Registro comprobado el 28 de septiembre de 2026, antes de crear el tag y la GitHub Release `v1.0.0-portfolio`. Este archivo documenta el cierre técnico; los enlaces a los workflows corresponden al commit verificado de `main`.
+Registro del cierre de portafolio, iniciado el 28 de septiembre de 2026. La primera parte conserva el estado de la publicación inicial; la sección «Estado actual» refleja las actualizaciones posteriores en `main`.
+
+## Estado actual
+
+- La GitHub Release [`v1.0.0-portfolio`](https://github.com/ferchox920/SaaS-Psych/releases/tag/v1.0.0-portfolio) se publicó desde `9a9a532`.
+- `main` avanzó luego hasta [`a912f937`](https://github.com/ferchox920/SaaS-Psych/commit/a912f9374e6393bf61b4779b7a981bb07af49db8), incorporando los nueve PR de Dependabot listados abajo. Los nueve están fusionados y cerrados.
+- La [CI del estado actual](https://github.com/ferchox920/SaaS-Psych/actions/runs/36461045867) y [CodeQL](https://github.com/ferchox920/SaaS-Psych/actions/runs/36461045783) terminaron correctamente sobre `a912f937`.
+- La CI incluye lint, tests y build de Go, análisis de carreras, integración PostgreSQL/Redis, frontend, Python y el recorrido demo real. CodeQL analiza Go, JavaScript/TypeScript y Python.
+- No hay PR abiertos al momento de esta actualización.
 
 ## Código y seguridad
 
@@ -15,11 +23,11 @@ Registro comprobado el 28 de septiembre de 2026, antes de crear el tag y la GitH
 
 Las ramas `portfolio/final-polish` y `portfolio/sessionflow-2026-09-26` se eliminaron después de comprobar que eran ancestros de `main` sin commits exclusivos. `portfolio/release-polish` se eliminó tras confirmar que su árbol de archivos coincidía exactamente con `main` y que el [PR #18](https://github.com/ferchox920/SaaS-Psych/pull/18) estaba fusionado; los cinco commits exclusivos en el grafo eran la consecuencia del squash, no trabajo pendiente. La rama documental `portfolio/release-readiness` se creó desde el `main` verificado para actualizar este registro.
 
-Al momento de editar este archivo todavía no existían el tag ni la GitHub Release `v1.0.0-portfolio`. La publicación está autorizada después de fusionar el PR documental, verificar CI y CodeQL sobre el nuevo `main` y apuntar el tag anotado exactamente a ese SHA.
+En el registro inicial todavía no existían el tag ni la GitHub Release `v1.0.0-portfolio`; se publicaron después desde el commit `9a9a532`, tal como queda registrado arriba.
 
-## Dependabot: nueve PR abiertos
+## Dependabot: estado histórico antes de la fusión
 
-Estado de los checks de cada head consultado el 28 de septiembre de 2026. Los fallos pertenecen a ramas de actualización y no afectan los workflows verdes de `main`. No se fusionó ni cerró ninguno de estos PR.
+La tabla conserva el estado observado en los heads el 28 de septiembre de 2026, antes de fusionarlos. Los fallos anotados describen aquellas ejecuciones; no son el estado actual. Los nueve PR se fusionaron el mismo día y están cerrados.
 
 | PR | Actualización | Estado observado |
 | --- | --- | --- |
@@ -33,7 +41,7 @@ Estado de los checks de cada head consultado el 28 de septiembre de 2026. Los fa
 | [#14](https://github.com/ferchox920/SaaS-Psych/pull/14) | @types/node 26 | Checks verdes. |
 | [#15](https://github.com/ferchox920/SaaS-Psych/pull/15) | checkout 7 | Checks verdes. |
 
-La agrupación nueva de Dependabot reduce propuestas futuras de versiones minor y patch por ecosistema; no modifica retroactivamente los PR ya abiertos.
+La agrupación de Dependabot reduce propuestas futuras de versiones minor y patch por ecosistema.
 
 ## Límites del proyecto
 

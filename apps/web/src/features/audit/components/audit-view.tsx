@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { listAudit } from "@/features/audit/api/audit-api";
 import { getAuditErrorMessage } from "@/features/audit/lib/audit-error-messages";
-import { auditSummary, auditTitle } from "@/features/audit/lib/audit-summary";
+import { auditActionFilters, auditEntityFilters, auditEntityLabel, auditSummary, auditTitle } from "@/features/audit/lib/audit-summary";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { AuditFilters } from "@/types/api";
 
@@ -78,15 +78,14 @@ export function AuditView() {
         <CardHeader>
           <CardTitle>Filtros</CardTitle>
           <CardDescription>
-            Puedes filtrar por prefijo de accion, entidad, rango temporal, orden y tamano de pagina.
+            Busca cambios por tipo, entidad, fechas y orden de registro.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-2">
-            <Label htmlFor="actionPrefix">Prefijo de acción</Label>
-            <Input
+            <Label htmlFor="actionPrefix">Tipo de cambio</Label>
+            <select className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 text-sm"
               id="actionPrefix"
-              placeholder="client. o appointment."
               value={draftFilters.actionPrefix}
               onChange={(event) =>
                 setDraftFilters((current) => ({
@@ -94,14 +93,13 @@ export function AuditView() {
                   actionPrefix: event.target.value,
                 }))
               }
-            />
+            >{auditActionFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="entity">Entidad</Label>
-            <Input
+            <select className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 text-sm"
               id="entity"
-              placeholder="client, appointment, session_note"
               value={draftFilters.entity}
               onChange={(event) =>
                 setDraftFilters((current) => ({
@@ -109,7 +107,7 @@ export function AuditView() {
                   entity: event.target.value,
                 }))
               }
-            />
+            >{auditEntityFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
           </div>
 
           <div className="space-y-2">
@@ -174,8 +172,8 @@ export function AuditView() {
                 }))
               }
             >
-              <option value="desc">desc</option>
-              <option value="asc">asc</option>
+              <option value="desc">Más recientes primero</option>
+              <option value="asc">Más antiguos primero</option>
             </select>
           </div>
 
@@ -222,7 +220,7 @@ export function AuditView() {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <CardTitle className="text-base">{auditTitle(entry)}</CardTitle>
-                    <Badge variant="secondary">{entry.entity.replaceAll("_", " ")}</Badge>
+                    <Badge variant="secondary">{auditEntityLabel(entry.entity)}</Badge>
                   </div>
                   <CardDescription>
                     {entry.actor_user_id ? "Acción de una persona autorizada" : "Acción del sistema"}
@@ -251,7 +249,7 @@ export function AuditView() {
         {!auditQuery.isLoading && !auditQuery.isError && entries.length === 0 ? (
           <EmptyState
             title="Sin eventos para esos filtros"
-            description="Ajusta el prefijo de accion, la entidad o el rango temporal para encontrar eventos."
+            description="Ajusta el tipo de cambio, la entidad o el rango temporal para encontrar eventos."
           />
         ) : null}
       </div>
@@ -264,7 +262,7 @@ export function AuditView() {
             type="button"
             variant="outline"
           >
-            {auditQuery.isFetchingNextPage ? "Cargando..." : "Cargar mas"}
+            {auditQuery.isFetchingNextPage ? "Cargando…" : "Cargar más"}
           </Button>
         </div>
       ) : null}

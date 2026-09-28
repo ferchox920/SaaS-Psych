@@ -123,13 +123,13 @@ test("local demo shows real fictional data and enforces clinical assignment", as
   await page.goto("/audit");
   await expect(page.getByRole("heading", { name: "Auditoría" })).toBeVisible();
   await expect(page.locator("main")).not.toContainText("apps/api");
-  await page.getByLabel("Prefijo de acción").fill("clinical_diff.merged");
+  await page.getByLabel("Tipo de cambio").selectOption("clinical_diff.merged");
   await page.getByRole("button", { name: "Aplicar filtros" }).click();
-  await expect(page.getByText("Cambios longitudinales fusionados").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cambios longitudinales fusionados" }).first()).toBeVisible();
+  await capture("04-audit.png");
   await page.getByText("Detalle técnico").first().click();
   await expect(page.getByText("clinical_diff.merged", { exact: true }).first()).toBeVisible();
   await expectMobileFit(page);
-  await capture("04-audit.png");
 
   await page.getByRole("button", { name: "Cerrar sesion" }).click();
   await page.goto("/login");

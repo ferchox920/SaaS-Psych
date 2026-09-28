@@ -18,6 +18,12 @@ async function setup(page: Page, role: "owner" | "member") {
     if (path === "/clients" && req.method() === "GET") return send({ items: [{ id: client, fullname: "Paciente Ficticia Aurora", contact: "", notes_public: "", updated_at: "2026-09-01" }] });
     if (path === "/clients/archived") return send({ items: [] });
     if (path === `/clients/${client}/assignments/users` && role === "owner") return send({ items: [{ id: user, email: "therapist@tenant-a.local" }] });
+    if (path === `/clients/${client}/assignments/assignment-1` && req.method() === "DELETE") {
+      const body = req.postDataJSON();
+      if (body.reason === "forbidden") return send({ error: "forbidden" }, 403);
+      assignments[0].ends_at = "2026-09-28T00:00:00Z";
+      return send({});
+    }
     if (path === `/clients/${client}/assignments` && role === "owner") {
       if (req.method() === "GET") return send({ items: assignments });
       const body = req.postDataJSON();
@@ -49,4 +55,31 @@ test("member UI does not request or expose assignment administration", async ({ 
   await page.getByRole("button", { name: /Paciente Ficticia Aurora/ }).click();
   await expect(page.getByRole("heading", { name: "Asignaciones clínicas" })).toHaveCount(0);
   expect(state.requests.some((path) => path.includes("/assignments"))).toBe(false);
+});
+
+test("ending an assignment uses a validated, cancellable dialog with visible errors", async ({ page }) => {
+  const state = await setup(page, "owner");
+  await page.goto("/clients");
+  await page.getByRole("button", { name: /Paciente Ficticia Aurora/ }).click();
+  await page.getByLabel("Profesional").selectOption({ label: "therapist@tenant-a.local" });
+  await page.getByRole("button", { name: "Asignar profesional" }).click();
+  const trigger = page.getByRole("button", { name: "Finalizar asignación" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Finalizar asignación clínica" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Motivo de finalización")).toBeFocused();
+  await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Escribe un motivo");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await dialog.getByLabel("Motivo de finalización").fill("forbidden");
+  await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("No tienes permiso");
+  await dialog.getByLabel("Motivo de finalización").fill("Reasignación ficticia");
+  await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText(/therapist@tenant-a.local · tratante · finalizada/)).toBeVisible();
+  expect(state.assignments[0].ends_at).toBeTruthy();
 });

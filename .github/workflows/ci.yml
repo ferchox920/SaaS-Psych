@@ -8,19 +8,24 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-build:
     name: Test + Build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
@@ -40,29 +45,48 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
 
+      - name: Install pinned golangci-lint v1
+        run: |
+          curl -fsSL https://github.com/golangci/golangci-lint/releases/download/v1.64.8/golangci-lint-1.64.8-linux-amd64.tar.gz -o /tmp/golangci-lint.tar.gz
+          tar -xzf /tmp/golangci-lint.tar.gz -C /tmp
+          echo /tmp/golangci-lint-1.64.8-linux-amd64 >> "$GITHUB_PATH"
+
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        run: golangci-lint run --config .golangci.yml --timeout=3m
+
+  race:
+    name: Race (stateful use cases)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          version: v1.64.8
-          working-directory: apps/api
-          args: --config .golangci.yml --timeout=3m
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - run: go test -race -count=1 ./internal/usecase/auth ./internal/usecase/appointment ./internal/usecase/sessionreport ./internal/usecase/clinicalaccess ./internal/usecase/longitudinal
 
   integration-db:
     name: Integration (Postgres + Redis)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -95,10 +119,10 @@ jobs:
         working-directory: apps/api
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
@@ -119,12 +143,13 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
@@ -155,12 +180,13 @@ jobs:
   transcription-python:
     name: Transcription Python
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -171,3 +197,82 @@ jobs:
 
       - name: Test transcriber contracts without a model download
         run: python -m unittest discover -s tools/transcription -p 'test_*.py' -v
+
+  live-demo:
+    name: Demo real (Postgres + Redis + API + web)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sessionflow
+          POSTGRES_PASSWORD: sessionflow
+          POSTGRES_DB: sessionflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sessionflow -d sessionflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: local
+      DEMO_MODE: "true"
+      DATABASE_URL: postgres://sessionflow:sessionflow@127.0.0.1:5432/sessionflow?sslmode=disable
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_ACCESS_SECRET: ci-only-fictional-demo-secret
+      WEB_ORIGIN: http://127.0.0.1:3103
+      NEXT_PUBLIC_DEMO_MODE: "true"
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8080/api/v1
+      RUN_LIVE_DEMO: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: corepack pnpm install --frozen-lockfile
+      - name: Install pinned migrations CLI
+        run: |
+          curl -fsSL https://github.com/golang-migrate/migrate/releases/download/v4.18.3/migrate.linux-amd64.tar.gz -o /tmp/migrate.tar.gz
+          tar -xzf /tmp/migrate.tar.gz -C /tmp
+          sudo mv /tmp/migrate /usr/local/bin/migrate
+      - name: Migrate an empty database and load fictional seed
+        run: |
+          migrate -path apps/api/migrations -database "$DATABASE_URL" up
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tools/demo/seed.sql
+      - name: Start API and require readiness
+        run: |
+          (cd apps/api && go run ./cmd/server) > "$RUNNER_TEMP/sessionflow-api.log" 2>&1 &
+          curl --fail --silent --show-error --retry 60 --retry-all-errors --retry-delay 1 --max-time 2 http://127.0.0.1:8080/ready
+      - name: Build demo frontend
+        run: corepack pnpm --filter web build
+      - name: Install Chromium
+        run: corepack pnpm --filter web exec playwright install --with-deps chromium
+      - name: Run real browser journey
+        run: corepack pnpm --filter web exec playwright test tests/live-demo.spec.ts
+      - name: Preserve fictional demo diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: live-demo-diagnostics
+          path: |
+            ${{ runner.temp }}/sessionflow-api.log
+            apps/web/playwright-report/
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 3

@@ -29,6 +29,11 @@ type Assignment struct {
 	CreatedAt       time.Time
 }
 
+type TenantUser struct {
+	ID    uuid.UUID
+	Email string
+}
+
 type AccessException struct {
 	ID              uuid.UUID
 	TenantID        uuid.UUID

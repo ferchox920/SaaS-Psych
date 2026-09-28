@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BrainCircuit, Check, Clock3, Mic, Pause, Pencil, Play, Square, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { validateAudioFile } from "@/features/clinical-analysis/lib/audio-file";
+import { ClinicalJourneyNav } from "./clinical-journey-nav";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -261,6 +262,8 @@ export function ClinicalWorkspace() {
           Segunda capa de análisis local. El profesional conserva el juicio clínico; ninguna sugerencia se incorpora automáticamente al registro.
         </p>
       </header>
+
+      <ClinicalJourneyNav current="/clinical-workspace" clientId={clientId} />
 
       <Card>
         <CardContent className="grid gap-4 pt-6 md:grid-cols-[1fr_1fr_auto] md:items-end">

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -14,10 +15,39 @@ import (
 
 type ClinicalAccessHandler struct {
 	service *clinicalaccessusecase.Service
+	users   interface {
+		ListTenantUsers(context.Context, uuid.UUID) ([]clinicalaccessusecase.TenantUser, error)
+	}
 }
 
 func NewClinicalAccessHandler(service *clinicalaccessusecase.Service) *ClinicalAccessHandler {
 	return &ClinicalAccessHandler{service: service}
+}
+
+func (h *ClinicalAccessHandler) WithUserDirectory(users interface {
+	ListTenantUsers(context.Context, uuid.UUID) ([]clinicalaccessusecase.TenantUser, error)
+}) *ClinicalAccessHandler {
+	h.users = users
+	return h
+}
+
+func (h *ClinicalAccessHandler) ListUsers(c echo.Context) error {
+	tenantID, _, _, err := clinicalAssignmentContext(c)
+	if err != nil {
+		return err
+	}
+	if h.users == nil {
+		return writeAPIError(c, http.StatusServiceUnavailable, "service_unavailable", "user directory unavailable")
+	}
+	users, err := h.users.ListTenantUsers(c.Request().Context(), tenantID)
+	if err != nil {
+		return err
+	}
+	items := make([]map[string]string, 0, len(users))
+	for _, user := range users {
+		items = append(items, map[string]string{"id": user.ID.String(), "email": user.Email})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
 type grantClinicalAssignmentRequest struct {

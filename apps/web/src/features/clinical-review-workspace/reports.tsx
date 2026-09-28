@@ -214,10 +214,10 @@ function ReportCard({
       <p>
         Creado {r.created_at} · Aprobado {r.approved_at ?? "Todavía no"}
       </p>
-      <Reference label="Sesión fuente" id={r.clinical_session_id} />
-      <Reference label="Reporte" id={r.id} />
       <details>
-        <summary>Provenance técnica y transcript fuente</summary>
+        <summary className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Procedencia técnica y transcripción fuente</summary>
+        <Reference label="Sesión fuente" id={r.clinical_session_id} />
+        <Reference label="Reporte" id={r.id} />
         <RunProvenance client={client} id={r.source_ai_run_id} />
         {!r.source_ai_run_id && (
           <p>

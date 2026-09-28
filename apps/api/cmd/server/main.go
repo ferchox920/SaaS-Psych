@@ -295,7 +295,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		serverDeps.ClientHandler = httphandlers.NewClientHandler(clientService)
 		serverDeps.AppointmentHandler = httphandlers.NewAppointmentHandler(appointmentService)
 		serverDeps.SessionNoteHandler = httphandlers.NewSessionNoteHandler(sessionNoteService)
-		serverDeps.ClinicalAccessHandler = httphandlers.NewClinicalAccessHandler(clinicalAccessService)
+		serverDeps.ClinicalAccessHandler = httphandlers.NewClinicalAccessHandler(clinicalAccessService).WithUserDirectory(clinicalAccessRepo)
 		serverDeps.ClinicalSessionHandler = httphandlers.NewClinicalSessionHandler(clinicalSessionService)
 		serverDeps.SessionReportHandler = httphandlers.NewSessionReportHandler(sessionReportService)
 		serverDeps.ClinicalAnalysisHandler = httphandlers.NewClinicalAnalysisHandler(clinicalAnalysisService)

@@ -67,10 +67,10 @@ Para entorno local sin demo: copie los `.env.example`, ejecute `make tools && ma
 
 ```bash
 cd apps/api
-gofmt -l .
-golangci-lint run ./...
+test -z "$(gofmt -l .)"
+golangci-lint run --config .golangci.yml --timeout=3m
 go test ./...
-RUN_PG_INTEGRATION=1 DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable" go test ./internal/http ./internal/infra/db -count=1
+RUN_PG_INTEGRATION=1 DATABASE_URL="postgres://sessionflow:sessionflow@127.0.0.1:5433/sessionflow?sslmode=disable" go test -count=1 ./...
 go build ./cmd/server
 cd ../..
 corepack pnpm install --frozen-lockfile
@@ -81,10 +81,10 @@ corepack pnpm --filter web test
 python -m unittest discover -s tools/transcription -p 'test_*.py'
 ```
 
-La CI ejecuta formato, lint, tests, integración y builds; el badge refleja el estado remoto, sin cifras de cobertura escritas a mano. Para el navegador contra servicios reales, arranque la demo, configure `WEB_ORIGIN` para la URL Playwright (`http://127.0.0.1:3103`), compile la web con `NEXT_PUBLIC_DEMO_MODE=true` y ejecute `RUN_LIVE_DEMO=1 corepack pnpm --filter web test`.
+La CI ejecuta formato, lint, tests, integración, detección de carreras, builds y un recorrido Playwright contra PostgreSQL, Redis, API y web reales preparados desde cero. CodeQL analiza Go, JavaScript/TypeScript y Python; Dependabot propone actualizaciones de Actions y dependencias. El badge refleja el estado remoto, sin cifras de cobertura escritas a mano. Para repetir el navegador contra servicios reales, arranque la demo, configure `WEB_ORIGIN=http://127.0.0.1:3103`, compile la web con `NEXT_PUBLIC_DEMO_MODE=true` y ejecute `RUN_LIVE_DEMO=1 corepack pnpm --filter web exec playwright test tests/live-demo.spec.ts`.
 
 ## Límites y hoja de ruta
 
-No hay validación clínica externa ni datos reales. El modo simulado responde con una fixture fija; el análisis libre requiere Ollama. Audio, retención y proveedor remoto exigen configuración y consentimiento explícitos. Los listados de clientes, citas y sesiones filtran autorización, tienen orden estable y páginas de 50 elementos (máximo 100); los selectores web aún descargan todas las páginas, mientras que las tarjetas del panel consultan solo la primera y señalan con `+` un mínimo, no un total exacto. Eventos, hipótesis, targets, goals, versiones GIRA y procesos longitudinales también se paginan; el estado longitudinal completo y las asociaciones de un proceso individual aún pueden crecer sin límite de respuesta. Hay mediciones ilustrativas sobre la pequeña base de demo, no pruebas de latencia bajo carga. Las mejoras prioritarias son búsqueda remota para selectores grandes, vistas resumidas del estado clínico, cursores estables ante escrituras concurrentes y simplificar paneles de revisión; no se prevén funciones ornamentales.
+No hay despliegue público ni video del recorrido; la evidencia disponible son capturas y la prueba full-stack de CI. No hay validación clínica externa ni datos reales. El modo simulado responde con una fixture fija; el análisis libre requiere Ollama. Audio, retención y proveedor remoto exigen configuración y consentimiento explícitos. Los listados de clientes, citas y sesiones filtran autorización, tienen orden estable y páginas de 50 elementos (máximo 100); los selectores web aún descargan todas las páginas, mientras que las tarjetas del panel consultan solo la primera y señalan con `+` un mínimo, no un total exacto. El selector de asignaciones muestra los primeros 100 usuarios del tenant; aún necesita búsqueda remota para tenants grandes. Eventos, hipótesis, targets, goals, versiones GIRA y procesos longitudinales también se paginan; el estado longitudinal completo y las asociaciones de un proceso individual aún pueden crecer sin límite de respuesta. Hay mediciones ilustrativas sobre la pequeña base de demo, no pruebas de latencia bajo carga. Las mejoras prioritarias son búsqueda remota para selectores grandes, vistas resumidas del estado clínico, cursores estables ante escrituras concurrentes y simplificar paneles de revisión; no se prevén funciones ornamentales.
 
-Documentación: [directrices](PROJECT_GUIDELINES.md), [progreso histórico](PROGRESS/PROGRESS_INDEX.md), [procedimientos anteriores archivados](docs/ARCHIVED_README_OPERATIONS.md). No se añade licencia sin una decisión explícita del autor.
+Documentación: [seguridad](SECURITY.md), [evaluación y contribución](CONTRIBUTING.md), [directrices](PROJECT_GUIDELINES.md), [progreso histórico](PROGRESS/PROGRESS_INDEX.md), [procedimientos anteriores archivados](docs/ARCHIVED_README_OPERATIONS.md). No se añade licencia sin una decisión explícita del autor.

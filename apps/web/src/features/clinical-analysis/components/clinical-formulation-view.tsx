@@ -19,6 +19,7 @@ import {
 } from "@/features/clinical-analysis/api/clinical-analysis-api";
 import { listClients } from "@/features/clients/api/clients-api";
 import { ClinicalFormulationAnchor } from "@/types/api";
+import { ClinicalJourneyNav } from "./clinical-journey-nav";
 
 const initialAnchors = (): ClinicalFormulationAnchor[] => [
   { source_id: "manual_fact_1", kind: "fact", summary: "", traffic_light: null },
@@ -68,6 +69,7 @@ export function ClinicalFormulationView() {
 
   return <div className="space-y-6">
     <header className="space-y-2"><Badge variant="outline">Memoria longitudinal</Badge><h2 className="text-3xl font-semibold">Formulación clínica aprobada</h2><p className="max-w-3xl text-muted-foreground">Solo una versión aprobada alimenta el contexto local. Los borradores, sugerencias pendientes y sugerencias descartadas quedan fuera.</p></header>
+    <ClinicalJourneyNav current="/clinical-formulation" clientId={clientId} />
     <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
       <Card><CardHeader><CardTitle>Nuevo borrador</CardTitle><CardDescription>Requiere entre dos y cuatro antecedentes concretos. Aprobar es una acción posterior y explícita.</CardDescription></CardHeader><CardContent className="space-y-5">
         <div className="space-y-2"><Label htmlFor="formulation-client">Paciente</Label><select id="formulation-client" className="h-11 w-full rounded-xl border bg-background px-3" value={clientId} onChange={(event) => setClientId(event.target.value)}><option value="">Selecciona un paciente</option>{(clientsQuery.data?.items ?? []).map((client) => <option key={client.id} value={client.id}>{client.fullname}</option>)}</select></div>

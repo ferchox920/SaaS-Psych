@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/hooks/use-session";
+import { ClinicalJourneyNav } from "@/features/clinical-analysis/components/clinical-journey-nav";
 import { Button } from "@/components/ui/button";
 import { DiffInbox } from "./diffs";
 import { Reports } from "./reports";
@@ -96,6 +97,7 @@ function Workspace({ client, tenantId }: { client: string; tenantId: string }) {
           Actualizar estado clínico
         </Button>
       </header>
+      <ClinicalJourneyNav current="/clients" clientId={client} />
       <nav aria-label="Secciones clínicas" className="flex flex-wrap gap-2">
         {tabs.map((t) => (
           <Button

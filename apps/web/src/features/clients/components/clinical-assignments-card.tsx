@@ -9,7 +9,7 @@ import { apiFetch, ApiError } from "@/lib/http/api-client";
 import { env } from "@/lib/config/env";
 
 type Assignment = { id: string; user_id: string; relationship: string; starts_at: string; ends_at?: string };
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+type TenantUser = { id: string; email: string };
 
 export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
   const { session, authenticatedRequest } = useSession();
@@ -30,6 +30,13 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
     queryFn: () => request<{ items: Assignment[] }>("GET"),
     retry: false,
   });
+  const users = useQuery({
+    queryKey: ["assignment-users", session?.tenantId],
+    enabled: admin,
+    queryFn: () => request<{ items: TenantUser[] }>("GET", "/users"),
+    retry: false,
+  });
+  const userEmail = (id: string) => users.data?.items.find((user) => user.id === id)?.email ?? "Profesional del tenant";
   const grant = useMutation({
     mutationFn: () => request<Assignment>("POST", "", { user_id: userId.trim(), relationship }),
     onSuccess: async () => {
@@ -45,7 +52,7 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
     },
   });
   if (!admin) return null;
-  const error = assignments.error || grant.error || end.error;
+  const error = assignments.error || users.error || grant.error || end.error;
   const errorText = error instanceof ApiError && error.status === 409
     ? "La asignación ya está activa o cambió. Actualiza la lista."
     : error instanceof ApiError && error.status === 403
@@ -57,22 +64,26 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">Solo propietarios y administradores. El rol por sí solo no concede acceso clínico.</p>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
-          <label className="space-y-1 text-sm">ID del profesional
-            <input className="block w-full rounded border p-2" value={userId} onChange={(event) => setUserId(event.target.value)} placeholder="UUID de usuario del mismo tenant" />
+          <label className="space-y-1 text-sm">Profesional
+            <select className="block w-full rounded border p-2" value={userId} onChange={(event) => setUserId(event.target.value)} disabled={users.isPending || users.isError}>
+              <option value="">{users.isPending ? "Cargando profesionales…" : "Seleccionar por correo"}</option>
+              {users.data?.items.map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}
+            </select>
           </label>
           <label className="space-y-1 text-sm">Relación clínica
             <select className="block w-full rounded border p-2" value={relationship} onChange={(event) => setRelationship(event.target.value)}>
               <option value="treating">Tratante</option><option value="supervisor">Supervisor</option>
             </select>
           </label>
-          <Button disabled={!uuidPattern.test(userId.trim()) || grant.isPending} onClick={() => grant.mutate()}>Asignar profesional</Button>
+          <Button disabled={!userId || grant.isPending} onClick={() => grant.mutate()}>Asignar profesional</Button>
         </div>
+        {users.data?.items.length === 0 && <p role="status">No hay profesionales disponibles en este tenant.</p>}
         {error && <p role="alert">{errorText}</p>}
         {assignments.isPending ? <p role="status">Consultando asignaciones…</p> : null}
         {assignments.data?.items.length === 0 ? <p>No hay asignaciones registradas.</p> : null}
         <ul className="space-y-2">
           {assignments.data?.items.map((item) => <li className="flex flex-wrap items-center justify-between gap-3 rounded border p-3" key={item.id}>
-            <span className="text-sm break-all">{item.user_id} · {item.relationship} · {item.ends_at ? "finalizada" : "activa"}</span>
+            <span className="text-sm">{userEmail(item.user_id)} · {item.relationship === "treating" ? "tratante" : "supervisor"} · {item.ends_at ? "finalizada" : "activa"}<details className="text-xs text-muted-foreground"><summary className="cursor-pointer">ID técnico</summary><span className="break-all">{item.user_id}</span></details></span>
             {!item.ends_at && <Button variant="outline" disabled={end.isPending} onClick={() => {
               const reason = window.prompt("Motivo obligatorio para finalizar la asignación:")?.trim();
               if (reason) end.mutate({ id: item.id, reason });

@@ -73,7 +73,7 @@ func (r *ClinicalIngestionRepository) DeleteTranscript(ctx context.Context, t, i
 	return v, tx.Commit(ctx)
 }
 func insertTranscriptTx(ctx context.Context, tx pgx.Tx, v ingestion.Transcript, actor uuid.UUID) (ingestion.Transcript, error) {
-	if err := v.TranscriptContent.Validate(); err != nil {
+	if err := v.Validate(); err != nil {
 		return v, err
 	}
 	// Serialize version allocation per clinical session, including human correction.

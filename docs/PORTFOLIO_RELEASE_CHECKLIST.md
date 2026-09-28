@@ -1,52 +1,40 @@
-# Preparación de la entrega de portafolio
+# Estado de publicación de SessionFlow
 
-Estado observado el 28 de septiembre de 2026. Este documento registra decisiones de publicación y triaje; no declara una release ni una licencia.
+Registro comprobado el 28 de septiembre de 2026, antes de crear el tag y la GitHub Release `v1.0.0-portfolio`. Este archivo documenta el cierre técnico; los enlaces a los workflows corresponden al commit verificado de `main`.
 
-## Notas propuestas para `v1.0.0-portfolio`
+## Código y seguridad
 
-**Título sugerido:** SessionFlow — recorrido de portafolio con revisión humana.
+- [x] El [PR #18](https://github.com/ferchox920/SaaS-Psych/pull/18) se fusionó por squash en `f543273634c6994328d570a2ce802179a1bd0d5c`.
+- [x] La [CI posmerge](https://github.com/ferchox920/SaaS-Psych/actions/runs/36426661825) terminó correctamente. Incluyó build y tests de Go, lint, integración PostgreSQL/Redis, race detector, frontend y Python.
+- [x] El frontend registró 71 pruebas aprobadas y 2 omisiones deliberadas. El E2E real aprobó 1 recorrido contra PostgreSQL, Redis, API y web, con migraciones desde cero y seed ficticio.
+- [x] [CodeQL posmerge](https://github.com/ferchox920/SaaS-Psych/actions/runs/36426661761) terminó correctamente para Go, JavaScript/TypeScript y Python. Las alertas #2 y #3 (`go/allocation-size-overflow`) figuran como `fixed` desde el análisis del 28 de septiembre de 2026; no fueron descartadas.
+- [x] `main` mantiene protección: PR obligatorio, rama actualizada, conversaciones resueltas, ocho checks obligatorios, protección para administradores y bloqueo de force push y eliminación.
+- [x] Las [capturas del recorrido](screenshots/) muestran únicamente la demo ficticia; la auditoría presenta primero un resumen humano y deja los metadatos en el detalle desplegable.
 
-**Resumen:** Demo ficticia desde paciente, cita y sesión hasta informe, decisión humana, estado longitudinal y auditoría. Backend Go, frontend Next.js, PostgreSQL y Redis; prueba de navegador full-stack en CI. La fixture de demo no hace inferencia clínica y el producto no está certificado para uso clínico.
+## Ramas y publicación
 
-Antes de crear el tag o la release:
+Las ramas `portfolio/final-polish` y `portfolio/sessionflow-2026-09-26` se eliminaron después de comprobar que eran ancestros de `main` sin commits exclusivos. `portfolio/release-polish` se eliminó tras confirmar que su árbol de archivos coincidía exactamente con `main` y que el [PR #18](https://github.com/ferchox920/SaaS-Psych/pull/18) estaba fusionado; los cinco commits exclusivos en el grafo eran la consecuencia del squash, no trabajo pendiente. La rama documental `portfolio/release-readiness` se creó desde el `main` verificado para actualizar este registro.
 
-- [ ] Obtener aprobación explícita del PR de cierre y fusionarlo mediante GitHub.
-- [ ] Confirmar CI y CodeQL verdes en el commit de `main` resultante.
-- [ ] Comprobar que las alertas de CodeQL #2 y #3 se cerraron por la corrección, sin descartarlas manualmente.
-- [ ] Decidir y documentar la licencia. MIT permite reutilización con atribución y sin garantía; sin licencia, el código visible permanece con todos los derechos reservados.
-- [ ] Confirmar que las capturas siguen representando la interfaz publicada y que solo contienen datos ficticios.
-- [ ] Crear `v1.0.0-portfolio` y publicar la release únicamente con autorización del propietario.
+Al momento de editar este archivo todavía no existían el tag ni la GitHub Release `v1.0.0-portfolio`. La publicación está autorizada después de fusionar el PR documental, verificar CI y CodeQL sobre el nuevo `main` y apuntar el tag anotado exactamente a ese SHA.
 
-## Gobierno de GitHub
+## Dependabot: nueve PR abiertos
 
-`main` tiene protección aplicada mediante la API de GitHub: exige PR, ramas actualizadas, resolución de conversaciones y los checks Test + Build, Lint, Race, Integration, Frontend, Transcription Python, Demo real y CodeQL. También impide force push y borrado; la protección se aplica a administradores. No exige aprobaciones de terceros (`required_approving_review_count: 0`) para que el propietario pueda mantener el proyecto mediante PR.
+Estado de los checks de cada head consultado el 28 de septiembre de 2026. Los fallos pertenecen a ramas de actualización y no afectan los workflows verdes de `main`. No se fusionó ni cerró ninguno de estos PR.
 
-No hay tags, releases ni licencia. Las ramas fusionadas `portfolio/final-polish` y `portfolio/sessionflow-2026-09-26` permanecen en remoto y pueden retirarse tras decisión del propietario; no se borraron.
+| PR | Actualización | Estado observado |
+| --- | --- | --- |
+| [#19](https://github.com/ferchox920/SaaS-Psych/pull/19) | Grupo Go | Falla Lint. |
+| [#20](https://github.com/ferchox920/SaaS-Psych/pull/20) | Grupo web | Falla Frontend. |
+| [#21](https://github.com/ferchox920/SaaS-Psych/pull/21) | TypeScript 7 | Fallan Frontend y Demo real. |
+| [#3](https://github.com/ferchox920/SaaS-Psych/pull/3) | upload-artifact 7 | Checks verdes. |
+| [#5](https://github.com/ferchox920/SaaS-Psych/pull/5) | psutil 7.2 | Checks verdes. |
+| [#7](https://github.com/ferchox920/SaaS-Psych/pull/7) | setup-go 7 | Checks verdes. |
+| [#8](https://github.com/ferchox920/SaaS-Psych/pull/8) | setup-node 7 | Checks verdes. |
+| [#14](https://github.com/ferchox920/SaaS-Psych/pull/14) | @types/node 26 | Checks verdes. |
+| [#15](https://github.com/ferchox920/SaaS-Psych/pull/15) | checkout 7 | Checks verdes. |
 
-## Triaje de Dependabot
+La agrupación nueva de Dependabot reduce propuestas futuras de versiones minor y patch por ecosistema; no modifica retroactivamente los PR ya abiertos.
 
-Los 15 PR siguientes estaban abiertos al preparar este cierre. “Verde” significa que los checks del head observado terminaron correctamente; deberán repetirse contra la base vigente antes de integrarlos. Ninguno se fusionó ni cerró aquí.
+## Límites del proyecto
 
-| PR | Ecosistema | Riesgo y estado observado | Siguiente paso |
-| --- | --- | --- | --- |
-| #3 upload-artifact 6→7 | Actions | Major; verde | Revisar notas de migración y agrupar con otras Actions compatibles. |
-| #7 setup-go 6→7 | Actions | Major; verde | Revisar versión del runtime de la acción. |
-| #8 setup-node 6→7 | Actions | Major; verde | Revisar versión del runtime de la acción. |
-| #15 checkout 6→7 | Actions | Major; verde | Revisar permisos y comportamiento de checkout. |
-| #4 OpenTelemetry 1.41→1.46 | Go | Lint falló: dependencia eleva Go objetivo a 1.25; linter fijado fue compilado con 1.24 | Resolver juntos toolchain y linter antes de reintentar. |
-| #6 Prometheus 1.23→1.24 | Go | Mismo fallo de toolchain/linter | Mismo tratamiento; no mezclar con este cierre. |
-| #9 go-redis 9.18→9.22 | Go | Verde; afecta integración Redis | Integrar con regresión PostgreSQL/Redis. |
-| #10 miniredis 2.37→2.39 | Go | Verde; dependencia de tests | Integrar después de #9 si sigue vigente. |
-| #11 pgx 5.7→5.11 | Go | Mismo fallo de toolchain/linter | Resolver toolchain; repetir integración real. |
-| #5 psutil 7.0→7.2 | Python | Verde; dependencia de transcripción | Integrar con prueba Python. |
-| #12 @hookform/resolvers 5.2→5.9 | npm | Verde; formularios | Integrar con suite web. |
-| #13 eslint-config-next 16.1→16.3 | npm | Frontend falló: regla de efectos React rechaza un `setState` síncrono en un efecto | Corregir el patrón señalado por lint y repetir toda la suite; no silenciar la regla. |
-| #14 @types/node 20→26 | npm | Major; verde | Revisar alineación con Node 22 y tipos usados antes de integrar. |
-| #16 zod 4.3→4.6 | npm | Verde; validación | Integrar con pruebas de formularios y contratos. |
-| #17 Tailwind 4.2→4.3 | npm | Verde; posible impacto visual | Revisar capturas y móvil además de CI. |
-
-Orden sugerido: primero los PR verdes de bajo riesgo (#5, #10, #12), después integraciones y UI (#9, #16, #17), luego Actions y majors con revisión manual; dejar #4, #6, #11 y #13 para correcciones específicas. La agrupación nueva de Dependabot reduce futuras propuestas menores y parches, pero no modifica estos PR ya abiertos.
-
-## Deuda posterior
-
-Los archivos `clinical_longitudinal_repository.go`, `clinical_strategy_merge.go`, `gira_semantic.go`, `clinical-workspace.tsx`, `session-workspace/workspace.tsx` y `cmd/server/main.go` concentran responsabilidades. Se dejaron fuera de este PR porque no eran necesarios para corregir las brechas verificadas. Los selectores grandes y la simplificación del panel clínico siguen descritos en el README.
+SessionFlow es un proyecto de portafolio con datos ficticios. La fixture demo no hace inferencia clínica y el software no está certificado para uso clínico. No se anuncia despliegue público ni video. El análisis libre necesita configuración local. Las mejoras de selectores grandes y paneles clínicos quedan documentadas en el [README](../README.md); no son parte de este cierre editorial.

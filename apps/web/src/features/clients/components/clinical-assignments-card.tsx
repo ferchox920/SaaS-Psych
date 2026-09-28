@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { apiFetch, ApiError } from "@/lib/http/api-client";
 import { env } from "@/lib/config/env";
+import { EndAssignmentDialog } from "@/features/clients/components/end-assignment-dialog";
 
 type Assignment = { id: string; user_id: string; relationship: string; starts_at: string; ends_at?: string };
 type TenantUser = { id: string; email: string };
@@ -16,6 +17,9 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
   const cache = useQueryClient();
   const [userId, setUserId] = useState("");
   const [relationship, setRelationship] = useState("treating");
+  const [ending, setEnding] = useState<Assignment | null>(null);
+  const endTrigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const admin = session?.role === "owner" || session?.role === "admin";
   const path = `/clients/${clientId}/assignments`;
   const request = <T,>(method: "GET" | "POST" | "DELETE", suffix = "", body?: unknown) =>
@@ -51,6 +55,13 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
       await cache.invalidateQueries({ queryKey: key });
     },
   });
+  const closeEndDialog = () => {
+    setEnding(null);
+    requestAnimationFrame(() => {
+      if (endTrigger.current?.isConnected) endTrigger.current.focus();
+      else heading.current?.focus();
+    });
+  };
   if (!admin) return null;
   const error = assignments.error || users.error || grant.error || end.error;
   const errorText = error instanceof ApiError && error.status === 409
@@ -60,7 +71,7 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
       : "No se pudo completar la operación. Consulta el estado e inténtalo de nuevo.";
   return (
     <Card>
-      <CardHeader><CardTitle>Asignaciones clínicas</CardTitle></CardHeader>
+      <CardHeader><CardTitle ref={heading} tabIndex={-1}>Asignaciones clínicas</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">Solo propietarios y administradores. El rol por sí solo no concede acceso clínico.</p>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
@@ -84,12 +95,23 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
         <ul className="space-y-2">
           {assignments.data?.items.map((item) => <li className="flex flex-wrap items-center justify-between gap-3 rounded border p-3" key={item.id}>
             <span className="text-sm">{userEmail(item.user_id)} · {item.relationship === "treating" ? "tratante" : "supervisor"} · {item.ends_at ? "finalizada" : "activa"}<details className="text-xs text-muted-foreground"><summary className="cursor-pointer">ID técnico</summary><span className="break-all">{item.user_id}</span></details></span>
-            {!item.ends_at && <Button variant="outline" disabled={end.isPending} onClick={() => {
-              const reason = window.prompt("Motivo obligatorio para finalizar la asignación:")?.trim();
-              if (reason) end.mutate({ id: item.id, reason });
+            {!item.ends_at && <Button variant="outline" disabled={end.isPending} onClick={(event) => {
+              endTrigger.current = event.currentTarget;
+              end.reset();
+              setEnding(item);
             }}>Finalizar asignación</Button>}
           </li>)}
         </ul>
+        {ending && <EndAssignmentDialog
+          professional={userEmail(ending.user_id)}
+          pending={end.isPending}
+          error={end.error ? errorText : undefined}
+          onCancel={closeEndDialog}
+          onConfirm={async (reason) => {
+            await end.mutateAsync({ id: ending.id, reason });
+            closeEndDialog();
+          }}
+        />}
       </CardContent>
     </Card>
   );

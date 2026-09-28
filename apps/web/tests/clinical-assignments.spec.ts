@@ -73,7 +73,9 @@ test("ending an assignment uses a validated, cancellable dialog with visible err
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
   await trigger.click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await dialog.getByLabel("Motivo de finalización").fill("forbidden");
   await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
   await expect(dialog.getByRole("alert")).toContainText("No tienes permiso");
@@ -81,6 +83,7 @@ test("ending an assignment uses a validated, cancellable dialog with visible err
   await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByText(/therapist@tenant-a.local · tratante · finalizada/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Asignaciones clínicas" })).toBeFocused();
   expect(state.assignments[0].ends_at).toBeTruthy();
 });
 

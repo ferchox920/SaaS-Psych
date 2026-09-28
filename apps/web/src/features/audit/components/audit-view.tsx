@@ -31,6 +31,8 @@ export function AuditView() {
   const allowed = ["owner", "admin"].includes(session?.role ?? "");
   const [draftFilters, setDraftFilters] = useState(getDefaultFilters);
   const [filters, setFilters] = useState(getDefaultFilters);
+  const [customAction, setCustomAction] = useState(false);
+  const [customEntity, setCustomEntity] = useState(false);
 
   const auditQuery = useInfiniteQuery({
     queryKey: ["audit", "list", filters],
@@ -86,28 +88,38 @@ export function AuditView() {
             <Label htmlFor="actionPrefix">Tipo de cambio</Label>
             <select className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 text-sm"
               id="actionPrefix"
-              value={draftFilters.actionPrefix}
-              onChange={(event) =>
-                setDraftFilters((current) => ({
-                  ...current,
-                  actionPrefix: event.target.value,
-                }))
-              }
-            >{auditActionFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+              value={customAction ? "__custom__" : draftFilters.actionPrefix}
+              onChange={(event) => {
+                setCustomAction(event.target.value === "__custom__");
+                setDraftFilters((current) => ({ ...current, actionPrefix: event.target.value === "__custom__" ? "" : event.target.value }));
+              }}
+            >
+              {auditActionFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              <option value="__custom__">Código personalizado…</option>
+            </select>
+            {customAction && <div className="space-y-2 pt-2">
+              <Label htmlFor="customActionPrefix">Código de acción</Label>
+              <Input id="customActionPrefix" value={draftFilters.actionPrefix} onChange={(event) => setDraftFilters((current) => ({ ...current, actionPrefix: event.target.value }))} placeholder="Código o prefijo exacto" />
+            </div>}
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="entity">Entidad</Label>
             <select className="flex h-11 w-full rounded-2xl border border-input bg-white px-4 text-sm"
               id="entity"
-              value={draftFilters.entity}
-              onChange={(event) =>
-                setDraftFilters((current) => ({
-                  ...current,
-                  entity: event.target.value,
-                }))
-              }
-            >{auditEntityFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+              value={customEntity ? "__custom__" : draftFilters.entity}
+              onChange={(event) => {
+                setCustomEntity(event.target.value === "__custom__");
+                setDraftFilters((current) => ({ ...current, entity: event.target.value === "__custom__" ? "" : event.target.value }));
+              }}
+            >
+              {auditEntityFilters.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              <option value="__custom__">Código personalizado…</option>
+            </select>
+            {customEntity && <div className="space-y-2 pt-2">
+              <Label htmlFor="customEntity">Código de entidad</Label>
+              <Input id="customEntity" value={draftFilters.entity} onChange={(event) => setDraftFilters((current) => ({ ...current, entity: event.target.value }))} placeholder="Código exacto" />
+            </div>}
           </div>
 
           <div className="space-y-2">
@@ -186,6 +198,8 @@ export function AuditView() {
                 const next = getDefaultFilters();
                 setDraftFilters(next);
                 setFilters(next);
+                setCustomAction(false);
+                setCustomEntity(false);
               }}
               type="button"
               variant="outline"

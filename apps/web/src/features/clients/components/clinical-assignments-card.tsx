@@ -19,6 +19,7 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
   const [relationship, setRelationship] = useState("treating");
   const [ending, setEnding] = useState<Assignment | null>(null);
   const endTrigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const admin = session?.role === "owner" || session?.role === "admin";
   const path = `/clients/${clientId}/assignments`;
   const request = <T,>(method: "GET" | "POST" | "DELETE", suffix = "", body?: unknown) =>
@@ -56,7 +57,10 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
   });
   const closeEndDialog = () => {
     setEnding(null);
-    requestAnimationFrame(() => endTrigger.current?.focus());
+    requestAnimationFrame(() => {
+      if (endTrigger.current?.isConnected) endTrigger.current.focus();
+      else heading.current?.focus();
+    });
   };
   if (!admin) return null;
   const error = assignments.error || users.error || grant.error || end.error;
@@ -67,7 +71,7 @@ export function ClinicalAssignmentsCard({ clientId }: { clientId: string }) {
       : "No se pudo completar la operación. Consulta el estado e inténtalo de nuevo.";
   return (
     <Card>
-      <CardHeader><CardTitle>Asignaciones clínicas</CardTitle></CardHeader>
+      <CardHeader><CardTitle ref={heading} tabIndex={-1}>Asignaciones clínicas</CardTitle></CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">Solo propietarios y administradores. El rol por sí solo no concede acceso clínico.</p>
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">

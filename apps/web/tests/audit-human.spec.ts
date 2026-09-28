@@ -57,6 +57,16 @@ test("audit filters and known events use Spanish labels while preserving API val
   await page.getByLabel("Orden").selectOption("desc");
   await page.getByRole("button", { name: "Aplicar filtros" }).click();
   await expect.poll(() => requested.at(-1)?.searchParams.get("order")).toBe("desc");
+  await page.getByLabel("Tipo de cambio").selectOption("__custom__");
+  await page.getByLabel("Código de acción").fill("unknown.operation");
+  await page.getByLabel("Entidad").selectOption("__custom__");
+  await page.getByLabel("Código de entidad").fill("unknown");
+  await page.getByRole("button", { name: "Aplicar filtros" }).click();
+  await expect.poll(() => requested.at(-1)?.searchParams.get("action_prefix")).toBe("unknown.operation");
+  expect(requested.at(-1)?.searchParams.get("entity")).toBe("unknown");
+  await page.getByRole("button", { name: "Limpiar" }).click();
+  await expect(page.getByLabel("Código de acción")).toHaveCount(0);
+  await expect(page.getByLabel("Código de entidad")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });

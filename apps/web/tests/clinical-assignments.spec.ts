@@ -83,3 +83,30 @@ test("ending an assignment uses a validated, cancellable dialog with visible err
   await expect(page.getByText(/therapist@tenant-a.local · tratante · finalizada/)).toBeVisible();
   expect(state.assignments[0].ends_at).toBeTruthy();
 });
+
+test("ending an assignment cannot submit twice while the API request is pending", async ({ page }) => {
+  await setup(page, "owner");
+  let releaseRequest: (() => void) | undefined;
+  const responseGate = new Promise<void>((resolve) => { releaseRequest = resolve; });
+  let deletes = 0;
+  await page.route(`**/api/v1/clients/${client}/assignments/assignment-1`, async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    deletes++;
+    await responseGate;
+    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.goto("/clients");
+  await page.getByRole("button", { name: /Paciente Ficticia Aurora/ }).click();
+  await page.getByLabel("Profesional").selectOption({ label: "therapist@tenant-a.local" });
+  await page.getByRole("button", { name: "Asignar profesional" }).click();
+  await page.getByRole("button", { name: "Finalizar asignación" }).click();
+  const dialog = page.getByRole("dialog", { name: "Finalizar asignación clínica" });
+  await dialog.getByLabel("Motivo de finalización").fill("Cambio ficticio");
+  await dialog.getByRole("button", { name: "Confirmar finalización" }).click();
+  await expect(dialog.getByRole("button", { name: "Finalizando…" })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+  expect(deletes).toBe(1);
+  releaseRequest?.();
+  await expect(dialog).toHaveCount(0);
+  expect(deletes).toBe(1);
+});

@@ -57,7 +57,7 @@ Construir un sistema multi-tenant "production vibes" que demuestre:
 ## 3) Stack y Herramientas
 
 ### Backend
-- Go 1.22+
+- Go 1.25+ (el módulo fija Go 1.25.0; véase `apps/api/go.mod`)
 - Router: Echo.
 - DB: Postgres
 - Migraciones: golang-migrate (o goose)

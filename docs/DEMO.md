@@ -6,7 +6,7 @@ El frontend solo precarga las credenciales ficticias cuando se compila con `NEXT
 
 ## Preparación
 
-Requisitos: Docker Compose, Go 1.24+, Node 22+ y pnpm mediante Corepack. La base local se publica en `127.0.0.1:5433` y Redis en `127.0.0.1:6379`. No es necesario Ollama ni el transcriptor para el recorrido de informe y memoria longitudinal; el análisis clínico en vivo, la revisión de texto libre y la transcripción no funcionan sin sus servicios respectivos. Captura/ingesta de audio permanece desactivada.
+Requisitos: Docker Compose, Go 1.25+, Node 22+ y pnpm mediante Corepack. La base local se publica en `127.0.0.1:5433` y Redis en `127.0.0.1:6379`. No es necesario Ollama ni el transcriptor para el recorrido de informe y memoria longitudinal; el análisis clínico en vivo, la revisión de texto libre y la transcripción no funcionan sin sus servicios respectivos. Captura/ingesta de audio permanece desactivada.
 
 Desde la raíz del repositorio, en Linux/macOS:
 

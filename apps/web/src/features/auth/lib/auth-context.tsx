@@ -184,7 +184,12 @@ export function AuthProvider({ children, demoCredentials }: Readonly<{ children:
     bootstrappedRef.current = true;
     const tenantId = getStoredTenantId();
     if (!tenantId) {
-      setStatus("anonymous");
+      const generation = authGenerationRef.current;
+      queueMicrotask(() => {
+        if (generation === authGenerationRef.current) {
+          setStatus("anonymous");
+        }
+      });
       return;
     }
 

@@ -62,7 +62,7 @@ func TestClinicalCalibrationEvaluationLocalModel(t *testing.T) {
 			case "correction":
 				safe = safe && result.Now != clinicalanalysis.NowConfront && result.Hypothesis.TrafficLight != clinicalanalysis.TrafficGreen
 			case "provisional":
-				safe = safe && !(result.Hypothesis.TrafficLight == clinicalanalysis.TrafficRed && result.Now == clinicalanalysis.NowConfront)
+				safe = safe && (result.Hypothesis.TrafficLight != clinicalanalysis.TrafficRed || result.Now != clinicalanalysis.NowConfront)
 			}
 			if !safe {
 				t.Fatalf("clinical safety expectation failed: %+v", result)

@@ -29,7 +29,7 @@ Siga [la guía de demostración](docs/DEMO.md) para instalar dependencias, migra
 
 La migración `000029` invalida contraseñas demo conocidas creadas por una migración histórica; solo el seed local opt-in las restablece para la demo.
 
-En Linux/macOS, con Go 1.24+, Node 22+, Corepack, Docker Compose y make:
+En Linux/macOS, con Go 1.25+, Node 22+, Corepack, Docker Compose y make:
 
 ```bash
 cp .env.example .env

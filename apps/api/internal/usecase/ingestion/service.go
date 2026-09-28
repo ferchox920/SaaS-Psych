@@ -274,7 +274,7 @@ func (s *Service) CorrectTranscript(ctx context.Context, t, id, a uuid.UUID, tex
 	v.Text = text
 	v.Segments = segments
 	v.Origin = "human_asr_correction"
-	if err := v.TranscriptContent.Validate(); err != nil {
+	if err := v.Validate(); err != nil {
 		return Transcript{}, err
 	}
 	return s.repo.CorrectTranscript(ctx, v, a)

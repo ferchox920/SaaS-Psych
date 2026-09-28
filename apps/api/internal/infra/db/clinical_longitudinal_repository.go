@@ -201,7 +201,7 @@ func (r *ClinicalLongitudinalRepository) listDiffs(ctx context.Context, t, c uui
 }
 
 func (r *ClinicalLongitudinalRepository) Decide(ctx context.Context, in longitudinal.DecisionInput) (longitudinal.Diff, error) {
-	if in.ExpectedDiffRevision < 1 || !(in.Decision == "approved" || in.Decision == "modified" || in.Decision == "rejected") {
+	if in.ExpectedDiffRevision < 1 || (in.Decision != "approved" && in.Decision != "modified" && in.Decision != "rejected") {
 		return longitudinal.Diff{}, domainerrors.NewValidation("invalid decision or expected_diff_revision")
 	}
 	tx, err := r.pool.Begin(ctx)

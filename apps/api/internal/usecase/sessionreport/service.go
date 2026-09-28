@@ -309,7 +309,7 @@ func Validate(r ReportV1) error {
 	}
 	// Only observed or reported report items can support an inference or hypothesis.
 	// Interpretive items must not recursively become their own evidence.
-	evidenceIDs := make(map[string]struct{}, len(r.Facts)+len(r.RelevantChanges)+len(r.PatientResponses)+len(r.AffectiveNodes))
+	evidenceIDs := make(map[string]struct{})
 	for _, item := range r.Facts {
 		evidenceIDs[item.ID] = struct{}{}
 	}

@@ -4,19 +4,31 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      actions-compatible:
+        update-types: [minor, patch]
   - package-ecosystem: gomod
     directory: /apps/api
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      go-compatible:
+        update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
+    groups:
+      web-compatible:
+        update-types: [minor, patch]
   - package-ecosystem: pip
     directory: /tools/transcription
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
+    groups:
+      transcription-compatible:
+        update-types: [minor, patch]

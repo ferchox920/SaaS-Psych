@@ -1,6 +1,7 @@
 # SessionFlow
 
 [![CI](https://github.com/ferchox920/SaaS-Psych/actions/workflows/ci.yml/badge.svg)](https://github.com/ferchox920/SaaS-Psych/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ferchox920/SaaS-Psych/actions/workflows/codeql.yml/badge.svg)](https://github.com/ferchox920/SaaS-Psych/actions/workflows/codeql.yml)
 
 SessionFlow es una aplicación multi-tenant para organizar pacientes, citas y sesiones clínicas. Sus informes y propuestas asistidas por IA requieren revisión humana antes de incorporarse a la memoria longitudinal. Es un proyecto de portafolio técnico: la demostración usa exclusivamente datos ficticios y el software **no sustituye el juicio clínico**.
 
@@ -12,7 +13,7 @@ Audio y transcripción local son opcionales y están desactivados por defecto. E
 
 ## Capturas reales
 
-Tomadas del frontend contra API, PostgreSQL y seed ficticio locales; no son maquetas.
+Actualizadas el 28 de septiembre de 2026 desde el frontend contra API, PostgreSQL, Redis y seed ficticio locales; no son maquetas. La auditoría muestra primero una explicación legible y conserva los códigos y metadatos en «Detalle técnico».
 
 | Acceso | Panel | Revisión humana |
 | --- | --- | --- |

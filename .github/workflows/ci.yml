@@ -59,11 +59,11 @@ jobs:
           go-version-file: apps/api/go.mod
           cache-dependency-path: apps/api/go.sum
 
-      - name: Install pinned golangci-lint v1
+      - name: Install pinned golangci-lint v2.13.2
         run: |
-          curl -fsSL https://github.com/golangci/golangci-lint/releases/download/v1.64.8/golangci-lint-1.64.8-linux-amd64.tar.gz -o /tmp/golangci-lint.tar.gz
+          curl -fsSL https://github.com/golangci/golangci-lint/releases/download/v2.13.2/golangci-lint-2.13.2-linux-amd64.tar.gz -o /tmp/golangci-lint.tar.gz
           tar -xzf /tmp/golangci-lint.tar.gz -C /tmp
-          echo /tmp/golangci-lint-1.64.8-linux-amd64 >> "$GITHUB_PATH"
+          echo /tmp/golangci-lint-2.13.2-linux-amd64 >> "$GITHUB_PATH"
 
       - name: Run golangci-lint
         run: golangci-lint run --config .golangci.yml --timeout=3m

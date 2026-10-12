@@ -12,31 +12,31 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
-    "@tanstack/react-query": "^5.103.2",
-    "@tanstack/react-query-devtools": "^5.103.2",
+    "@tanstack/react-query": "^5.104.1",
+    "@tanstack/react-query-devtools": "^5.104.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^0.577.0",
-    "next": "16.3.6",
+    "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-hook-form": "^7.88.0",
+    "react-hook-form": "^7.89.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.6",
+    "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "8.70.1"
+    "typescript-eslint": "8.71.1"
   },
   "packageManager": "pnpm@10.32.0+sha512.9b2634bb3fed5601c33633f2d92593f506270a3963b8c51d2b2d6a828da615ce4e9deebef9614ccebbc13ac8d3c0f9c9ccceb583c69c8578436fa477dbb20d70"
 }

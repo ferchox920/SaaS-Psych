@@ -283,6 +283,7 @@ func (h *ClientHandler) handleClientError(c echo.Context, err error) error {
 
 func defaultClientErrorMappings() []domainErrorMapping {
 	return []domainErrorMapping{
+		{Target: domainerrors.ErrConflict, Status: http.StatusConflict, Code: "conflict", Message: "profile changed; reload before saving"},
 		{
 			Target: domainerrors.ErrValidation,
 			Status: http.StatusBadRequest,

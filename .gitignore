@@ -14,5 +14,6 @@ apps/api/.env
 apps/web/test-results/
 apps/web/playwright-report/
 /output/
+/.playwright-mcp/
 __pycache__/
 *.py[cod]

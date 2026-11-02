@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	stdhttp "net/http"
 	"os"
 	"os/signal"
@@ -39,6 +40,7 @@ import (
 	googlecalendarusecase "sessionflow/apps/api/internal/usecase/googlecalendar"
 	"sessionflow/apps/api/internal/usecase/ingestion"
 	longitudinalusecase "sessionflow/apps/api/internal/usecase/longitudinal"
+	manualsourceusecase "sessionflow/apps/api/internal/usecase/manualsource"
 	sessionnoteusecase "sessionflow/apps/api/internal/usecase/sessionnote"
 	sessionreportusecase "sessionflow/apps/api/internal/usecase/sessionreport"
 	tenantusecase "sessionflow/apps/api/internal/usecase/tenant"
@@ -132,6 +134,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		appointmentRepo := db.NewAppointmentRepository(pool).WithTransactionalAudit()
 		sessionNoteRepo := db.NewSessionNoteRepository(pool).WithTransactionalAudit()
 		clinicalAccessRepo := db.NewClinicalAccessRepository(pool)
+		serverDeps.ManualSourceHandler = httphandlers.NewManualSourceHandler(manualsourceusecase.New(db.NewManualSourceRepository(pool), clinicalAccessRepo))
 		consentRepo := db.NewClinicalConsentRepository(pool)
 		serverDeps.ClinicalConsentHandler = httphandlers.NewClinicalConsentHandler(consentusecase.NewService(consentRepo, clinicalAccessRepo))
 		clinicalMemoryRepo := db.NewClinicalMemoryRepository(pool)
@@ -365,7 +368,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	serverErr := make(chan error, 1)
 
 	go func() {
-		if err := e.Start(":" + cfg.HTTPPort); err != nil {
+		if err := e.Start(net.JoinHostPort(os.Getenv("HTTP_HOST"), cfg.HTTPPort)); err != nil {
 			if err == stdhttp.ErrServerClosed {
 				return
 			}

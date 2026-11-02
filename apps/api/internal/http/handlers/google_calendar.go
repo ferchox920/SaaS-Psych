@@ -79,6 +79,36 @@ func (h *GoogleCalendarHandler) ListCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"items": items})
 }
 
+func (h *GoogleCalendarHandler) ListLinkedEvents(c echo.Context) error {
+	tenantID, userID, ok := calendarPrincipal(c)
+	if !ok {
+		return writeAPIError(c, http.StatusUnauthorized, "unauthorized", "calendar context missing")
+	}
+	from, err := time.Parse(time.RFC3339, c.QueryParam("from"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "from must be RFC3339")
+	}
+	to, err := time.Parse(time.RFC3339, c.QueryParam("to"))
+	if err != nil {
+		return writeAPIError(c, http.StatusBadRequest, "validation_error", "to must be RFC3339")
+	}
+	limit, offset, valid := parsePage(c)
+	if !valid {
+		return nil
+	}
+	items, err := h.service.ListLinkedEvents(c.Request().Context(), tenantID, userID, from, to, limit+1, offset)
+	if err != nil {
+		return h.handleError(c, err)
+	}
+	var next *int
+	if len(items) > limit {
+		value := offset + limit
+		next = &value
+		items = items[:limit]
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items, "next_offset": next})
+}
+
 func (h *GoogleCalendarHandler) ImportEvent(c echo.Context) error {
 	tenantID, userID, ok := calendarPrincipal(c)
 	if !ok {

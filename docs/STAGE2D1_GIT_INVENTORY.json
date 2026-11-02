@@ -1,0 +1,662 @@
+{
+  "stage": "2D.1",
+  "date": "2026-09-09",
+  "description": "Inventory relative to Stage 2D.1 work, not attribution of the entire dirty diff against HEAD. PREEXISTING changes preserved; MODIFIED includes preexisting untracked files edited in this stage; NEW created in this stage. No commits or destructive resets.",
+  "counts": {
+    "PREEXISTING": 94,
+    "MODIFIED": 16,
+    "NEW": 20
+  },
+  "files": [
+    {
+      "path": ".env.example",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/cmd/clinical-project-schema/main.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/cmd/server/main.go",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/analysis_safety_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/concurrency_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/doc.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/harness_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/http_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/isolation_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/lease_wait_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/outage_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/process_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/acceptance/ingestion/storage_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/certification/gira/runner_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/certification/gira/runner.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/config/config_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/config/config.go",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/config/ingestion_test.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/config/ingestion.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/config/project_bridge_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/clinical_longitudinal_routes_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/clinical_project_routes_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_consent.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_ingestion_openapi_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_ingestion.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_longitudinal_strategy_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_longitudinal.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_project_openapi_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_project_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/clinical_project.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/handlers/docs_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/http/server.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/artifactstore/encryption_acceptance_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/infra/artifactstore/maintenance.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/artifactstore/store_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/artifactstore/store.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_consent_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_consent_repository.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_analysis.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_artifacts.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_jobs_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_jobs.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_maintenance.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_pipeline_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_reads.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_ingestion_transcripts.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_longitudinal_acceptance_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_longitudinal_merge.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_longitudinal_repository.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_project_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_project_repository.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_strategy_merge.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_strategy_postgres_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/clinical_strategy_repository.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/db/tenant_aware_query_guard_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/gira_eval_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/longitudinal_eval_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/provider_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/provider.go",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/session_report_schema_test.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/infra/ollama/session_report_schema.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/infra/remotegira/certification_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/remotegira/openai_provider_test.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/infra/remotegira/openai_provider.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/remotegira/pipeline_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/remotegira/transport.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/transcriber/durable_integration_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/transcriber/durable_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/transcriber/durable.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/infra/transcriber/provider.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/observability/clinical_metrics.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/observability/ingestion_metrics.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/clinicalairun/service.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/clinicalanalysis/service.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/clinicalanalysis/types.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/consent/service.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/maintenance.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/service.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/transcript_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/transcript.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/types.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/usecase/ingestion/worker.go",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_builder_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_builder.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_privacy_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_privacy.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_prompt.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_semantic_schema.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_semantic_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_semantic.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/gira_validation.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/project_bridge_test.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/project_bridge.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/prompt.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/service_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/service.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/strategy_types.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/strategy_validation.go",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/types.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/validation_test.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/longitudinal/validation.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/internal/usecase/sessionreport/length_validation.go",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/internal/usecase/sessionreport/service.go",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "apps/api/internal/usecase/transcription/service.go",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000022_clinical_diffs.down.sql",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000023_therapeutic_strategy_core.down.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000023_therapeutic_strategy_core.up.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000024_clinical_project_bridge.down.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000024_clinical_project_bridge.up.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000025_clinical_ingestion.down.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000025_clinical_ingestion.up.sql",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "apps/api/migrations/000026_ingestion_transcript_timing.down.sql",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "apps/api/migrations/000026_ingestion_transcript_timing.up.sql",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "docs/ADR_MANUAL_CLINICAL_PROJECT_BRIDGE.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/CLINICAL_PROJECT_BRIDGE_CONTRACT_V1.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/openapi.yaml",
+      "git_status": " M",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "docs/STAGE2B1_GAP_REMEDIATION_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C_IMPLEMENTATION_ACCEPTANCE_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C1_GIRA_BUILDER_RELIABILITY_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C2B_SOL_MODEL_CERTIFICATION_ARCHITECTURE_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C3_REMOTE_GIRA_PROVIDER_CERTIFICATION_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C4A_REMOTE_PRIVACY_BOUNDARY_HARNESS_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C4B_OPENAI_GIRA_REAL_CERTIFICATION_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2C5_MANUAL_PROJECT_BRIDGE_ACCEPTANCE_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "docs/STAGE2D_CLINICAL_INGESTION_DURABLE_PROCESSING_ACCEPTANCE_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "MODIFIED"
+    },
+    {
+      "path": "docs/STAGE2D1_GIT_INVENTORY.json",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "docs/STAGE2D1_PRODUCTION_READINESS_CONCURRENCY_ACCEPTANCE_REPORT.md",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "tools/acceptance/stage2d1_migration_roundtrip.ps1",
+      "git_status": "??",
+      "stage2d1": "NEW"
+    },
+    {
+      "path": "tools/transcription/__pycache__/faster_whisper_server.cpython-313.pyc",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    },
+    {
+      "path": "tools/transcription/faster_whisper_server.py",
+      "git_status": " M",
+      "stage2d1": "PREEXISTING"
+    }
+  ]
+}

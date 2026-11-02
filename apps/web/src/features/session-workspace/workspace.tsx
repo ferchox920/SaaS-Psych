@@ -161,6 +161,7 @@ function Workspace({
       <header className="space-y-2">
         <div className="flex flex-wrap gap-x-4 gap-y-1">
           <Link className="text-primary !underline" href={`/clients/${clientId}/clinical`}>Abrir revisión clínica y estado longitudinal</Link>
+          <Link className="text-primary !underline" href={`/clients/${clientId}/materials`}>Conversaciones y materiales</Link>
           <Link className="text-primary !underline" href="/clients">Volver a pacientes</Link>
         </div>
         <h2 className="text-3xl font-semibold">

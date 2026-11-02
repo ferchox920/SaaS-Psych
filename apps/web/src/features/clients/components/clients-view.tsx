@@ -17,6 +17,7 @@ import { ClientFormCard } from "@/features/clients/components/client-form-card";
 import { ClinicalAssignmentsCard } from "@/features/clients/components/clinical-assignments-card";
 import { getClientErrorMessage } from "@/features/clients/lib/client-error-messages";
 import { ClientFormValues } from "@/features/clients/schemas/client-schema";
+import { ClientProfileCard } from "@/features/clients/components/client-profile-card";
 export function ClientsView() {
   const queryClient = useQueryClient();
   const { authenticatedRequest } = useSession();
@@ -146,6 +147,10 @@ export function ClientsView() {
       </header>
 
       {activeClient ? <Link className="inline-flex rounded-xl border border-primary px-4 py-3 font-semibold text-primary" href={`/clients/${activeClient.id}/session`}>Abrir sesión clínica de {activeClient.fullname}</Link> : <p className="text-sm text-muted-foreground">Selecciona un paciente para abrir su sesión clínica.</p>}
+
+      {activeClient ? <ClientProfileCard key={`profile:${activeClient.id}`} clientId={activeClient.id} name={activeClient.fullname} /> : null}
+
+      {activeClient ? <Link className="inline-flex rounded-xl border px-4 py-3 font-semibold text-primary" href={`/clients/${activeClient.id}/materials`}>Ver conversaciones y materiales de {activeClient.fullname}</Link> : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
         <div className="space-y-4">

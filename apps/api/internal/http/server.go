@@ -12,6 +12,7 @@ import (
 )
 
 type ServerDeps struct {
+	ManualSourceHandler         *handlers.ManualSourceHandler
 	TrustedProxyRanges          []*net.IPNet
 	ClinicalIngestionHandler    *handlers.ClinicalIngestionHandler
 	ClinicalConsentHandler      *handlers.ClinicalConsentHandler
@@ -117,6 +118,8 @@ func NewServer(deps ServerDeps) *echo.Echo {
 		clients.GET("/archived", deps.ClientHandler.ListArchived)
 		clients.GET("/:id", deps.ClientHandler.Get)
 		clients.PUT("/:id", deps.ClientHandler.Update)
+		clients.GET("/:id/profile", deps.ClientHandler.GetProfile)
+		clients.PUT("/:id/profile", deps.ClientHandler.SaveProfile)
 		clients.POST("/:id/archive", deps.ClientHandler.Archive)
 		clients.POST("/:id/restore", deps.ClientHandler.Restore)
 		clients.DELETE("/:id", deps.ClientHandler.Delete)
@@ -144,6 +147,13 @@ func NewServer(deps ServerDeps) *echo.Echo {
 			sessions.POST("/:id/reports/generate", deps.SessionReportHandler.Generate)
 			sessions.GET("/:id/reports", deps.SessionReportHandler.List)
 		}
+	}
+	if deps.ManualSourceHandler != nil && deps.TenantMiddleware != nil && deps.AuthMiddleware != nil {
+		materials := api.Group("/clients/:client_id/materials", deps.TenantMiddleware, deps.AuthMiddleware, httpmiddleware.RequireRole("owner", "admin", "member"))
+		materials.GET("", deps.ManualSourceHandler.List)
+		materials.POST("", deps.ManualSourceHandler.Import)
+		materials.GET("/:source_id", deps.ManualSourceHandler.Get)
+		materials.GET("/:source_id/revisions", deps.ManualSourceHandler.Versions)
 	}
 	if deps.SessionReportHandler != nil && deps.TenantMiddleware != nil && deps.AuthMiddleware != nil {
 		reports := api.Group("/session-reports", deps.TenantMiddleware, deps.AuthMiddleware, httpmiddleware.RequireRole("owner", "admin", "member"))
@@ -257,6 +267,7 @@ func NewServer(deps ServerDeps) *echo.Echo {
 		calendar.GET("/status", deps.GoogleCalendarHandler.Status)
 		calendar.POST("/authorize", deps.GoogleCalendarHandler.BeginAuthorization)
 		calendar.GET("/events", deps.GoogleCalendarHandler.ListCandidates)
+		calendar.GET("/linked-events", deps.GoogleCalendarHandler.ListLinkedEvents)
 		calendar.POST("/events/:event_id/import", deps.GoogleCalendarHandler.ImportEvent)
 		calendar.POST("/appointments/:appointment_id/push", deps.GoogleCalendarHandler.PushAppointment)
 		calendar.DELETE("/connection", deps.GoogleCalendarHandler.Disconnect)

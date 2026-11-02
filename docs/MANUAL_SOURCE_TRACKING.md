@@ -1,0 +1,15 @@
+# Seguimiento de fuentes para sincronización manual
+
+El registro preparado por la migración 36 se utiliza ahora con la migración 37 y el servicio de materiales. La implementación de contenido, revisión de versiones y comparación en la app está documentada en [Materiales e importación manual](MANUAL_SOURCE_CONTENT.md). Las limitaciones descritas abajo corresponden al alcance original de la migración 36 por sí sola.
+
+Origen seleccionado: texto de las conversaciones del proyecto asociado. La fecha de creación/actualización del chat se conserva por separado de la fecha candidata de sesión y su fundamento (`source_timestamp`, `explicit_text`, `professional_confirmed`). La fecha del chat no confirma la fecha de atención. Conservar zona horaria de interpretación. Los mensajes aportados por el usuario pueden mezclar voces de paciente y terapeuta: no atribuirlos íntegramente al paciente. Las respuestas del asistente son análisis externos, no evidencia factual. El lector debe recorrer todas las páginas y rechazar contenido truncado antes de calcular hashes o marcar una revisión completa.
+
+La unicidad de fuente y hash no depende del título ni de la fecha. Dos conversaciones el mismo día permanecen fuentes diferentes hasta revisar su vínculo clínico. Una conversación con varios días puede contener varias sesiones: esta primera migración permite una vinculación opcional por fuente y requerirá un modelo de segmentos antes de importar ese caso.
+
+La migración 000036 prepara un registro de identidad y revisiones para fuentes externas. No implementa acceso a ChatGPT, sincronización, importación de texto ni crea o modifica sesiones clínicas. No contiene información de Marco ni se aplica automáticamente a una base activa.
+
+Cada fuente se identifica por tenant, tipo, proyecto e identificador estable de la fuente; el identificador no es necesariamente una sesión clínica. Una vinculación opcional apunta a una sesión del mismo tenant y paciente, y requiere una decisión explícita del profesional. La unicidad impide asignar la misma fuente del mismo proyecto a dos pacientes del tenant.
+
+Cada revisión registra un hash y el esquema de cálculo, su estado de revisión y sus responsables. La restricción única evita registrar dos veces la misma versión de una fuente; un cambio produce otra revisión. El hash por sí solo no identifica una sesión clínica ni detecta que fuentes diferentes se refieren a la misma sesión. Una revisión pendiente o rechazada no debe interpretarse como dato clínico aprobado. No se guarda texto clínico en este registro.
+
+Antes de implementar el servicio falta definir el origen concreto, la estabilidad de sus identificadores, canonicalización y versión del hash, controles de acceso y consentimiento aplicables, así como la revisión y vinculación manual de fuentes con sesiones existentes. Registrar la revisión y aplicar cualquier resultado clínico deben ocurrir de forma transaccional y tenant-aware, con auditoría y protección de concurrencia. Las restricciones SQL por sí solas no constituyen un servicio idempotente ni comprueban la asociación vigente del proyecto en el perfil.

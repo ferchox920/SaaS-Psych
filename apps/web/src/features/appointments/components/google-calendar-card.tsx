@@ -14,20 +14,23 @@ import {
   getGoogleCalendarStatus,
   importGoogleCalendarEvent,
   listGoogleCalendarCandidates,
+  listLinkedCalendarEvents,
   pushAppointmentToGoogleCalendar,
 } from "@/features/appointments/api/google-calendar-api";
 import { useSession } from "@/features/auth/hooks/use-session";
 import { ApiError } from "@/lib/http/api-client";
 import { Client } from "@/types/api";
+import { CalendarPatientReview } from "./calendar-patient-review";
 
 type Props = {
   clients: Client[];
+  clientsReady: boolean;
   range: { from: string; to: string };
   onImported: (appointmentId: string) => Promise<void>;
   activeAppointmentId: string | null;
 };
 
-export function GoogleCalendarCard({ clients, range, onImported, activeAppointmentId }: Props) {
+export function GoogleCalendarCard({ clients, clientsReady, range, onImported, activeAppointmentId }: Props) {
   const queryClient = useQueryClient();
   const { authenticatedRequest } = useSession();
   const [clientByEvent, setClientByEvent] = useState<Record<string, string>>({});
@@ -49,6 +52,11 @@ export function GoogleCalendarCard({ clients, range, onImported, activeAppointme
     queryFn: () => authenticatedRequest((session) => getGoogleCalendarStatus(session)),
   });
   const connected = statusQuery.data?.connected ?? false;
+  const linksQuery = useQuery({
+    queryKey: ["google-calendar", "links", range],
+    queryFn: () => authenticatedRequest((session) => listLinkedCalendarEvents(session, range)),
+    enabled: statusQuery.data?.enabled === true,
+  });
   const candidatesQuery = useQuery({
     queryKey: ["google-calendar", "candidates", range],
     queryFn: () => authenticatedRequest((session) => listGoogleCalendarCandidates(session, range)),
@@ -72,6 +80,7 @@ export function GoogleCalendarCard({ clients, range, onImported, activeAppointme
     onSuccess: async (appointment) => {
       toast.success("Evento asociado y turno creado.");
       await queryClient.invalidateQueries({ queryKey: ["google-calendar", "candidates"] });
+      await queryClient.invalidateQueries({ queryKey: ["google-calendar", "links"] });
       await onImported(appointment.id);
     },
   });
@@ -122,6 +131,16 @@ export function GoogleCalendarCard({ clients, range, onImported, activeAppointme
           </div>
         ) : null}
         {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+        <CalendarPatientReview key={`${range.from}:${range.to}:${candidatesQuery.dataUpdatedAt}:${clientsReady}:${connected}:${clients.map((client) => `${client.id}:${client.updated_at}`).join(",")}`} events={events} clients={clients} ready={clientsReady} connected={connected && !candidatesQuery.isFetching && !candidatesQuery.isError} />
+        {linksQuery.isError ? <p role="alert" className="text-sm text-destructive">No se pudieron cargar las citas vinculadas. <Button type="button" variant="outline" onClick={() => void linksQuery.refetch()}>Reintentar</Button></p> : null}
+        {linksQuery.data?.items.length ? <details className="rounded-2xl border p-4" open>
+          <summary className="cursor-pointer font-semibold">Citas vinculadas a Google Calendar ({linksQuery.data.items.length})</summary>
+          <p className="my-2 text-sm text-muted-foreground">Registro de asociaciones del rango activo. Las reprogramaciones posteriores en Google requieren revisión.</p>
+          <ul className="divide-y">{linksQuery.data.items.map((link) => <li className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm" key={link.appointment_id}>
+            <span><strong>{link.client_name}</strong> · {new Date(link.starts_at).toLocaleString("es-AR", {timeZone:"America/Argentina/Buenos_Aires",hourCycle:"h23"})}</span>
+            <span className="text-xs text-muted-foreground">Evento Google asociado · {link.sync_status === "synced" ? "vínculo guardado" : link.sync_status}</span>
+          </li>)}</ul>
+        </details> : null}
         {connected && !candidatesQuery.isLoading && events.length === 0 ? (
           <p className="text-sm text-muted-foreground">No hay eventos de Google pendientes de asociación en el rango activo.</p>
         ) : null}

@@ -2,6 +2,17 @@ import { AuthSession } from "@/features/auth/lib/auth-types";
 import { env } from "@/lib/config/env";
 import { apiFetch } from "@/lib/http/api-client";
 import { Appointment, GoogleCalendarCandidate, GoogleCalendarStatus, ListEnvelope } from "@/types/api";
+import { fetchAllPages } from "@/lib/http/fetch-all-pages";
+
+export type LinkedCalendarEvent = { appointment_id: string; client_id: string; client_name: string; event_id: string; starts_at: string; ends_at: string; sync_status: string };
+
+export function listLinkedCalendarEvents(session: AuthSession, range: { from: string; to: string }) {
+  return fetchAllPages((offset) => apiFetch<ListEnvelope<LinkedCalendarEvent>>({
+    baseUrl: env.NEXT_PUBLIC_API_URL, method: "GET",
+    path: `/integrations/google-calendar/linked-events?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&limit=100&offset=${offset}`,
+    tenantId: session.tenantId, accessToken: session.accessToken,
+  }));
+}
 
 export function getGoogleCalendarStatus(session: AuthSession) {
   return apiFetch<GoogleCalendarStatus>({

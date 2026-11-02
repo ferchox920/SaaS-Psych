@@ -25,7 +25,11 @@ export function LoginForm({ next }: { next: string }) {
   const onSubmit = form.handleSubmit(async (values) => {
     clearFeedback();
     const payload = loginSchema.parse(values);
-    await mutation.mutateAsync(payload);
+    try {
+      await mutation.mutateAsync(payload);
+    } catch {
+      // AuthContext supplies the visible feedback; do not leak a rejected submit to Next.
+    }
   });
 
   return (

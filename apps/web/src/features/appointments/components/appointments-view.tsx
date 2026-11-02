@@ -30,8 +30,9 @@ function getDefaultRange() {
   const from = new Date(now);
   from.setHours(0, 0, 0, 0);
   const to = new Date(from);
-  to.setDate(to.getDate() + 14);
-  to.setHours(23, 59, 0, 0);
+  from.setDate(from.getDate() - (from.getDay() + 6) % 7);
+  to.setTime(from.getTime());
+  to.setDate(to.getDate() + 7);
 
   return {
     from: from.toISOString(),
@@ -181,6 +182,7 @@ export function AppointmentsView() {
       <GoogleCalendarCard
         activeAppointmentId={activeAppointmentId}
         clients={clients}
+        clientsReady={clientsQuery.isSuccess && !clientsQuery.isFetching}
         onImported={refreshAppointments}
         range={range}
       />

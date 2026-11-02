@@ -1,0 +1,2 @@
+DROP TABLE clinical_manual_source_revisions;
+DROP TABLE clinical_manual_sources;
